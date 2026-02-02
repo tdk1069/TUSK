@@ -61,6 +61,12 @@ This tool is entirely client-side and requires **no backend**.
   - Object and monster reuse
 - Output designed for traditional LP-style mudlibs
 
+### 🧾 To-Do ###
+- [ ] Room Comments
+- [ ] Fix Monster Alignment
+- [ ] Doors
+- [ ] Add Sound / Smell to Room Items
+- [ ] Room Terrain
 ---
 
 ## 🚀 Getting Started
