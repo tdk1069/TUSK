@@ -62,11 +62,11 @@ This tool is entirely client-side and requires **no backend**.
 - Output designed for traditional LP-style mudlibs
 
 ### 🧾 To-Do ###
-- [ ] Room Comments
-- [ ] Fix Monster Alignment
-- [ ] Doors
-- [ ] Add Sound / Smell to Room Items
-- [ ] Room Terrain
+- [x] Room Comments
+- [x] Fix Monster Alignment
+- [x] Doors
+- [x] Add Sound / Smell to Room Items
+- [x] Room Terrain
 ---
 
 ## 🚀 Getting Started

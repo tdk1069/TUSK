@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MUD World Builder Pro v7.8</title>
+    <title>MUD World Builder Pro v7.9</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -694,17 +694,28 @@
                 }
             });
             r.details.forEach(det => {
-                if(det.type === 'look') looks.push(`        ({${det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',')}}) : "${det.desc}"`);
-                else if(det.type === 'listen') listens.push(`        "${det.keywords}" : "${det.desc}"`);
-                else if(det.type === 'smell') smells.push(`        "${det.keywords}" : "${det.desc}"`);
+                if(det.type === 'look') {
+                    looks.push(`        ({${det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',')}}) : "${det.desc}"`);
+                }
+                else if(det.type === 'listen') {
+                    let keys = det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',');
+                    listens.push(`    set_listen(({${keys}}), "${det.desc}");`);
+                }
+                else if(det.type === 'smell') {
+                    let keys = det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',');
+                    smells.push(`    set_smell(({${keys}}), "${det.desc}");`);
+                }
             });
             r.monsters.forEach(m => mons.push(`    add_object(MONDIR+"${monMap[m.idName+m.race]}", "", RT_TRACK);`));
             r.objects.forEach(id => { if(objMap[id]) objs.push(`    add_object(OBJDIR+"${objMap[id]}", "", RT_TRACK);`); });
 
             let exCode = ex.length ? `    set_exits(([\n${ex.join(',\n')}\n    ]));` : "";
             let lookCode = looks.length ? `    set_items(([\n${looks.join(',\n')}\n    ]));` : "";
-            let listenCode = listens.length ? `    set_listen(([\n${listens.join(',\n')}\n    ]));` : "";
-            let smellCode = smells.length ? `    set_smell(([\n${smells.join(',\n')}\n    ]));` : "";
+            
+            // New Format: Single lines, not inside a mapping
+            let listenCode = listens.length ? listens.join('\n') : "";
+            let smellCode = smells.length ? smells.join('\n') : "";
+            
             let commentBlock = r.comments ? r.comments.split('\n').map(l=>`// ${l}`).join('\n') + "\n" : "";
 
             f.folder("rooms").file(rMap[r.id], `${commentBlock}#include "../include/include.h"\ninherit ROOM;\nvoid create() {\n    ::create();\n${formatLong("set_short",r.name)}\n${formatLong("set_long",r.longDesc)}\n    set_terrain("${r.terrain}");\n${lookCode}\n${listenCode}\n${smellCode}\n${exCode}\n${doors.join('\n')}\n${mons.join('\n')}\n${objs.join('\n')}\n}`);
