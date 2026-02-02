@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MUD World Builder Pro v7.9</title>
+    <title>MUD World Builder Pro v8.0</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -111,8 +111,23 @@
         
         <label>Terrain</label>
         <select id="r-terrain" onchange="syncRoom()">
+            <option value="forest">Forest</option>
+            <option value="plains">Plains</option>
+            <option value="hills">Hills</option>
+            <option value="mountains">Mountains</option>
+            <option value="town">Town</option>
+            <option value="coast">Coast</option>
+            <option value="sea">Sea</option>
+            <option value="swamp">Swamp</option>
+            <option value="jungle">Jungle</option>
+            <option value="underwater">Underwater</option>
+            <option value="desert">Desert</option>
+            <option value="river">River</option>
+            <option value="tundra">Tundra</option>
+            <option value="snowplains">Snowplains</option>
+            <option value="treetops">Treetops</option>
+            <option value="lake">Lake</option>
             <option value="indoor">Indoor</option>
-            <option value="outdoor">Outdoor</option>
         </select>
 
         <hr>
@@ -718,7 +733,13 @@
             
             let commentBlock = r.comments ? r.comments.split('\n').map(l=>`// ${l}`).join('\n') + "\n" : "";
 
-            f.folder("rooms").file(rMap[r.id], `${commentBlock}#include "../include/include.h"\ninherit ROOM;\nvoid create() {\n    ::create();\n${formatLong("set_short",r.name)}\n${formatLong("set_long",r.longDesc)}\n    set_terrain("${r.terrain}");\n${lookCode}\n${listenCode}\n${smellCode}\n${exCode}\n${doors.join('\n')}\n${mons.join('\n')}\n${objs.join('\n')}\n}`);
+            // Logic to omit set_terrain if "indoor"
+            let terrainCode = "";
+            if (r.terrain && r.terrain !== "indoor") {
+                terrainCode = `    set_terrain("${r.terrain}");\n`;
+            }
+
+            f.folder("rooms").file(rMap[r.id], `${commentBlock}#include "../include/include.h"\ninherit ROOM;\nvoid create() {\n    ::create();\n${formatLong("set_short",r.name)}\n${formatLong("set_long",r.longDesc)}\n${terrainCode}${lookCode}\n${listenCode}\n${smellCode}\n${exCode}\n${doors.join('\n')}\n${mons.join('\n')}\n${objs.join('\n')}\n}`);
         });
 
         saveAs(await zip.generateAsync({type:"blob"}), `${area}.zip`);
