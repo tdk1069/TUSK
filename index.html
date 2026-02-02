@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MUD World Builder Pro v6</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root { --bg: #0f0f0f; --panel: #1a1a1a; --accent: #4a90e2; --text: #e0e0e0; --border: #333; --danger: #c0392b; --success: #27ae60; --modal-bg: #222; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Sidebar */
+        #sidebar { width: 380px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 10; }
+        .tabs { display: flex; background: #111; border-bottom: 1px solid var(--border); }
+        .tab-btn { flex: 1; padding: 10px 5px; border: none; background: none; color: #777; cursor: pointer; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; border-bottom: 2px solid transparent; }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: #1a1a1a; }
+        .tab-content { padding: 15px; flex-grow: 1; overflow-y: auto; display: none; }
+        .tab-content.active { display: block; }
+
+        /* General UI */
+        label { display: block; font-size: 0.7rem; color: #888; margin-bottom: 4px; text-transform: uppercase; font-weight: 700; margin-top: 10px; }
+        input, textarea, select { width: 100%; background: #000; color: #fff; border: 1px solid #444; padding: 8px; box-sizing: border-box; margin-bottom: 5px; border-radius: 4px; font-family: inherit; }
+        button.action-btn { width:100%; padding: 8px; border:none; border-radius:4px; color:white; cursor:pointer; font-weight:bold; margin-top:5px; }
+        .btn-green { background: var(--success); }
+        .btn-blue { background: var(--accent); }
+        .btn-red { background: var(--danger); }
+        .btn-grey { background: #444; }
+        .btn-sm { padding: 2px 8px; font-size: 0.8rem; width: auto; margin:0; }
+
+        /* Lists in Sidebar */
+        .list-item { background: #222; padding: 10px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s; }
+        .list-item:hover { background: #2a2a2a; }
+        .list-item h4 { margin: 0; font-size: 0.9rem; color: #fff; pointer-events: none; }
+        .list-item span { font-size: 0.75rem; color: #888; pointer-events: none; }
+        
+        /* Modal */
+        #modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(3px); }
+        #modal-box { background: var(--modal-bg); width: 500px; max-height: 90vh; border: 1px solid #444; border-radius: 6px; display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        #modal-header { padding: 15px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; background: #1a1a1a; }
+        #modal-body { padding: 20px; overflow-y: auto; }
+        #modal-footer { padding: 15px; border-top: 1px solid #333; display: flex; justify-content: flex-end; gap: 10px; background: #1a1a1a; }
+
+        /* Alignment Slider */
+        .align-container { background: #111; padding: 10px; border-radius: 4px; text-align: center; margin-bottom: 10px; }
+        .align-val { color: var(--accent); font-weight: bold; font-size: 1.1rem; display: block; margin-bottom: 5px; }
+
+        /* Map */
+        #canvas-container { flex-grow: 1; position: relative; }
+        canvas { display: block; }
+        #compass-overlay { position: absolute; top: 20px; left: 400px; background: rgba(26,26,26,0.8); padding: 10px; border-radius: 8px; border: 1px solid var(--border); backdrop-filter: blur(4px); z-index: 5; }
+        .compass-grid { display: grid; grid-template-columns: repeat(3, 35px); gap: 5px; }
+        .dir-btn { width: 35px; height: 35px; background: #333; border: 1px solid #444; color: #fff; cursor: pointer; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .dir-btn:hover { background: var(--accent); }
+        .z-btns { display: flex; gap: 5px; margin-top: 8px; }
+        .z-btn { flex: 1; padding: 5px; font-size: 10px; background: #222; border: 1px solid #444; color: white; cursor: pointer; }
+        #tooltip { position: fixed; background: rgba(0,0,0,0.9); color: white; padding: 5px 10px; border-radius: 4px; pointer-events: none; display: none; border: 1px solid var(--accent); z-index: 1000; }
+    </style>
+</head>
+<body>
+
+<div id="modal-overlay">
+    <div id="modal-box">
+        <div id="modal-header">
+            <h3 id="modal-title" style="margin:0">Edit</h3>
+            <button onclick="closeModal()" style="background:none; border:none; color:#888; cursor:pointer; font-size:1.2rem;">&times;</button>
+        </div>
+        <div id="modal-body">
+            </div>
+        <div id="modal-footer">
+            <button class="action-btn btn-grey" style="width:auto" onclick="closeModal()">Cancel</button>
+            <button class="action-btn btn-green" style="width:auto" onclick="saveModal()">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="compass-overlay">
+    <div class="compass-grid">
+        <button class="dir-btn" onclick="dig('nw')">NW</button>
+        <button class="dir-btn" onclick="dig('n')">N</button>
+        <button class="dir-btn" onclick="dig('ne')">NE</button>
+        <button class="dir-btn" onclick="dig('w')">W</button>
+        <div style="text-align:center; line-height:35px; color:#555">┼</div>
+        <button class="dir-btn" onclick="dig('e')">E</button>
+        <button class="dir-btn" onclick="dig('sw')">SW</button>
+        <button class="dir-btn" onclick="dig('s')">S</button>
+        <button class="dir-btn" onclick="dig('se')">SE</button>
+    </div>
+    <div class="z-btns">
+        <button class="z-btn" onclick="dig('up')">UP ▲</button>
+        <button class="z-btn" onclick="dig('down')">DWN ▼</button>
+    </div>
+</div>
+
+<div id="sidebar">
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('basic')">Room</button>
+        <button class="tab-btn" onclick="showTab('objects')">Obj</button>
+        <button class="tab-btn" onclick="showTab('monsters')">Mon</button>
+        <button class="tab-btn" onclick="showTab('file')">File</button>
+    </div>
+
+    <div id="tab-basic" class="tab-content active">
+        <h3>Current Room</h3>
+        <label>Room Name</label>
+        <input type="text" id="r-name" oninput="syncRoom()">
+        <label>Room Description</label>
+        <textarea id="r-long" rows="12" oninput="syncRoom()"></textarea>
+        
+        <hr>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>Room Details</h3>
+            <button class="action-btn btn-blue" style="width:auto; padding:5px 10px;" onclick="openDetailModal(-1)">+ Add Detail</button>
+        </div>
+        <div id="detail-list" style="margin-top:10px;"></div>
+
+        <hr>
+        <button class="action-btn btn-red" onclick="deleteRoom()">Delete Room</button>
+    </div>
+
+    <div id="tab-objects" class="tab-content">
+        <h3>Room Contents</h3>
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+            <select id="room-obj-select"></select>
+            <button class="dir-btn" onclick="addObjToRoom()">+</button>
+        </div>
+        <div id="room-obj-list"></div>
+
+        <hr>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>Object Library</h3>
+            <button class="action-btn btn-blue" style="width:auto; padding:5px 10px;" onclick="openObjectModal(-1)">+ New</button>
+        </div>
+        <div id="global-obj-list" style="margin-top:10px;"></div>
+    </div>
+
+    <div id="tab-monsters" class="tab-content">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>Monsters in Room</h3>
+            <button class="action-btn btn-blue" style="width:auto; padding:5px 10px;" onclick="openMonsterModal(-1)">+ New</button>
+        </div>
+        <div id="monster-list" style="margin-top:15px;"></div>
+    </div>
+
+    <div id="tab-file" class="tab-content">
+        <h3>Project Files</h3>
+        <button class="action-btn btn-grey" onclick="downloadJSON()">Save Project (JSON)</button>
+        <button class="action-btn btn-grey" onclick="importData()">Load Project (JSON)</button>
+        <hr>
+        <h3>LPC Export Settings</h3>
+        <label>Area Name</label> <input type="text" id="area-name" value="new_area" oninput="exportSettings.areaName=this.value">
+        <label>Base Path</label> <input type="text" id="base-path" value="/d/domain/new_area/" oninput="exportSettings.basePath=this.value">
+        <label>Base Level</label> <input type="number" id="base-level" value="5" oninput="exportSettings.baseLevel=this.value">
+        <button class="action-btn btn-red" style="margin-top:15px;" onclick="exportLPC()">Export .zip (LPC)</button>
+    </div>
+</div>
+
+<div id="canvas-container">
+    <canvas id="mapCanvas"></canvas>
+</div>
+
+<script>
+    /* --- CONSTANTS --- */
+    const WEAPON_TYPES = ["Blade", "Blunt", "Knife", "Polearm", "Projectile", "Staff", "Thrown", "Two Handed", "Whip"];
+    const ARMOUR_TYPES = [
+        "Amulet", "Cloak", "Ring", "Shield",
+        "Cloth Head", "Cloth Torso", "Cloth Hands", "Cloth Feet",
+        "Leather Head", "Leather Torso", "Leather Hands", "Leather Feet",
+        "Mail Head", "Mail Torso", "Mail Hands", "Mail Feet",
+        "Plate Head", "Plate Torso", "Plate Hands", "Plate Feet"
+    ];
+
+    /* --- STATE --- */
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    let rooms = [];
+    let links = [];
+    let objectLibrary = [];
+    let activeRoom = null;
+    let currentZ = 0;
+    let camera = { x: 0, y: 0 };
+    let isPanning = false, lastMouse = { x: 0, y: 0 };
+    
+    // Export Settings state
+    let exportSettings = {
+        areaName: "new_area",
+        basePath: "/d/domain/new_area/",
+        baseLevel: 5
+    };
+    
+    // Modal State
+    let currentEditType = null;
+    let currentEditId = null;
+
+    function init() {
+        window.addEventListener('resize', resize);
+        canvas.addEventListener('mousedown', onDown);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', () => isPanning = false);
+        
+        activeRoom = createRoom(0, 0, 0, "The Start");
+        createObjectDef("sword", "A Rusty Sword", "weapon", "Blade"); // Default obj
+        createObjectDef("vest", "A Leather Vest", "armour", "Leather Torso");
+        resize();
+    }
+
+    function createRoom(x, y, z, name) {
+        const r = { id: Date.now()+Math.random(), x, y, z, name, longDesc: "A generic room.", details: [], monsters: [], objects: [] };
+        rooms.push(r);
+        return r;
+    }
+
+    function deleteRoom() {
+        if (!activeRoom) return;
+        if (rooms.length <= 1) { alert("Cannot delete the last room!"); return; }
+        if (!confirm("Are you sure you want to delete this room?")) return;
+
+        // Remove links connected to this room
+        links = links.filter(l => l.from !== activeRoom.id && l.to !== activeRoom.id);
+        
+        // Remove room
+        rooms = rooms.filter(r => r.id !== activeRoom.id);
+        
+        // Reset active room
+        activeRoom = rooms[0];
+        currentZ = activeRoom.z;
+        
+        // Update UI
+        document.getElementById('r-name').value = activeRoom.name;
+        document.getElementById('r-long').value = activeRoom.longDesc;
+        refreshLists();
+        draw();
+    }
+
+    function showTab(tabId) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('tab-' + tabId).classList.add('active');
+        refreshLists();
+    }
+
+    function refreshLists() {
+        if(!activeRoom) return;
+        
+        // 1. Details
+        const detDiv = document.getElementById('detail-list');
+        detDiv.innerHTML = activeRoom.details.map((d,i) => 
+            `<div class="list-item" onclick="openDetailModal(${i})">
+                <div style="overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:220px;">
+                   <h4>${d.keywords}</h4><span style="font-size:0.7rem; color:#666">${d.desc.substring(0,30)}...</span>
+                </div>
+                <button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.details.splice(${i},1);refreshLists()">X</button>
+            </div>`
+        ).join('');
+
+        // 2. Room Objects
+        const rObjDiv = document.getElementById('room-obj-list');
+        rObjDiv.innerHTML = activeRoom.objects.map((oid,i) => {
+            const o = objectLibrary.find(x=>x.id==oid);
+            return o ? `<div class="list-item"><span>${o.short}</span><button class="btn-red btn-sm" onclick="activeRoom.objects.splice(${i},1);refreshLists()">X</button></div>` : '';
+        }).join('');
+        
+        // 3. Global Obj Select
+        const sel = document.getElementById('room-obj-select');
+        sel.innerHTML = objectLibrary.map(o => `<option value="${o.id}">${o.short}</option>`).join('');
+
+        // 4. Global Obj List
+        const gObjDiv = document.getElementById('global-obj-list');
+        gObjDiv.innerHTML = objectLibrary.map((o,i) => 
+            `<div class="list-item" onclick="openObjectModal(${i})">
+                <div><h4>${o.idName}</h4><span>${o.type}</span></div>
+                <button class="btn-red btn-sm" onclick="event.stopPropagation(); objectLibrary.splice(${i},1); refreshLists();">X</button>
+            </div>`
+        ).join('');
+
+        // 5. Monster List
+        const monDiv = document.getElementById('monster-list');
+        monDiv.innerHTML = activeRoom.monsters.map((m,i) => 
+            `<div class="list-item" onclick="openMonsterModal(${i})">
+                <div><h4>${m.short}</h4><span>Lvl ${m.level} ${m.race}</span></div>
+                <button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.monsters.splice(${i},1); refreshLists();">X</button>
+            </div>`
+        ).join('');
+    }
+
+    /* --- OBJECTS --- */
+    function createObjectDef(idName, short, type, subtype) {
+        // Added idName vs short distinction
+        objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype });
+        refreshLists();
+    }
+    function addObjToRoom() {
+        const val = document.getElementById('room-obj-select').value;
+        if(val) { activeRoom.objects.push(val); refreshLists(); draw(); }
+    }
+
+    /* --- MODAL SYSTEM --- */
+    function openModal(title) {
+        document.getElementById('modal-overlay').style.display = 'flex';
+        document.getElementById('modal-title').innerText = title;
+    }
+    function closeModal() {
+        document.getElementById('modal-overlay').style.display = 'none';
+        refreshLists(); 
+        draw();
+    }
+    function saveModal() {
+        closeModal();
+    }
+
+    /* --- DETAILS MODAL --- */
+    function openDetailModal(idx) {
+        currentEditType = 'detail';
+        currentEditId = idx;
+        
+        if(idx === -1) {
+            activeRoom.details.push({ keywords: "sign, notice", desc: "It reads: Beware of dog." });
+            currentEditId = activeRoom.details.length - 1;
+        }
+        
+        const d = activeRoom.details[currentEditId];
+        openModal(idx === -1 ? "Add Detail" : "Edit Detail");
+        const div = document.getElementById('modal-body');
+        div.innerHTML = `
+            <p style="font-size:0.8rem; color:#888; margin-top:0;">Items in the room description that players can 'look at'.</p>
+            <label>Keywords (CSV)</label>
+            <input type="text" value="${d.keywords}" placeholder="e.g. sign, wooden sign, poster" 
+                oninput="activeRoom.details[currentEditId].keywords = this.value">
+            <label>Description</label>
+            <textarea rows="6" oninput="activeRoom.details[currentEditId].desc = this.value">${d.desc}</textarea>
+        `;
+    }
+
+    /* --- OBJECT MODAL --- */
+    function openObjectModal(idx) {
+        currentEditType = 'object';
+        currentEditId = idx;
+        
+        if(idx === -1) {
+            createObjectDef("item", "a new item", "simple", "");
+            currentEditId = objectLibrary.length - 1;
+        }
+
+        const obj = objectLibrary[currentEditId];
+        openModal(idx === -1 ? "Create Object" : "Edit Object");
+        renderObjectForm(obj);
+    }
+
+    function renderObjectForm(obj) {
+        const div = document.getElementById('modal-body');
+        
+        let subHtml = `<input type="text" disabled placeholder="N/A" style="background:#222; border:none;">`;
+        if(obj.type === 'weapon') {
+            subHtml = `<select onchange="updateObj('subtype', this.value)">
+                <option value="">-- Select --</option>
+                ${WEAPON_TYPES.map(t => `<option ${obj.subtype===t?'selected':''}>${t}</option>`).join('')}
+            </select>`;
+        } else if (obj.type === 'armour') {
+            subHtml = `<select onchange="updateObj('subtype', this.value)">
+                <option value="">-- Select --</option>
+                ${ARMOUR_TYPES.map(t => `<option ${obj.subtype===t?'selected':''}>${t}</option>`).join('')}
+            </select>`;
+        }
+
+        div.innerHTML = `
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1"><label>ID Name (Keywords)</label><input type="text" value="${obj.idName}" placeholder="e.g. sword" oninput="updateObj('idName', this.value)"></div>
+                <div style="flex:1"><label>Short Desc (Inventory)</label><input type="text" value="${obj.short}" placeholder="e.g. a rusty sword" oninput="updateObj('short', this.value)"></div>
+            </div>
+            
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1"><label>Type</label>
+                    <select onchange="updateObj('type', this.value); renderObjectForm(objectLibrary[currentEditId])">
+                        <option value="simple" ${obj.type==='simple'?'selected':''}>Simple</option>
+                        <option value="weapon" ${obj.type==='weapon'?'selected':''}>Weapon</option>
+                        <option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option>
+                    </select>
+                </div>
+                <div style="flex:1"><label>Subtype</label>${subHtml}</div>
+            </div>
+            <label>Long Description</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>
+        `;
+    }
+
+    function updateObj(key, val) {
+        objectLibrary[currentEditId][key] = val;
+        if(key === 'type') objectLibrary[currentEditId].subtype = "";
+    }
+
+    /* --- MONSTER MODAL --- */
+    function openMonsterModal(idx) {
+        currentEditType = 'monster';
+        currentEditId = idx;
+
+        if(idx === -1) {
+            activeRoom.monsters.push({
+                id: Date.now(),
+                idName: "guard",
+                short: "a city guard", long: "A city guard stands here looking bored.",
+                race: "Human", class: "Fighter", level: 1,
+                gender: "neuter", alignment: 0,
+                inventory: []
+            });
+            currentEditId = activeRoom.monsters.length - 1;
+        }
+
+        const m = activeRoom.monsters[currentEditId];
+        openModal(idx === -1 ? "Create Monster" : "Edit Monster");
+        renderMonsterForm(m);
+    }
+
+    // Global alignment text function
+    function getAlignTxt(val) {
+        if(val < -1000) return "Satanic";
+        if(val < -500) return "Diabolic";
+        if(val < -250) return "Evil";
+        if(val < 250) return "Neutral";
+        if(val < 500) return "Good";
+        if(val < 1000) return "Arch Angelic";
+        return "Saintly";
+    }
+    
+    // Updates UI label instantly
+    function updateAlignLabel(val) {
+        const intVal = parseInt(val);
+        document.getElementById('align-lbl').innerText = getAlignTxt(intVal) + ' (' + intVal + ')';
+        activeRoom.monsters[currentEditId].alignment = intVal;
+    }
+
+    function renderMonsterForm(m) {
+        const div = document.getElementById('modal-body');
+        
+        const invOpts = objectLibrary.map(o => `<option value="${o.id}">${o.short}</option>`).join('');
+        let invList = m.inventory.map((oid, i) => {
+            const o = objectLibrary.find(x=>x.id==oid);
+            return o ? `<span style="background:#333; padding:2px 6px; border-radius:3px; margin-right:5px; font-size:0.8rem; border:1px solid #555;">
+                ${o.short} <span style="color:#c0392b; cursor:pointer;" onclick="removeMonInv(${i})">x</span></span>` : '';
+        }).join('');
+
+        div.innerHTML = `
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1"><label>ID Name (Keywords)</label><input type="text" value="${m.idName}" placeholder="e.g. guard" oninput="updateMon('idName', this.value)"></div>
+                <div style="flex:1"><label>Short Desc (Visible)</label><input type="text" value="${m.short}" placeholder="e.g. a city guard" oninput="updateMon('short', this.value)"></div>
+            </div>
+
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1"><label>Level</label><input type="number" value="${m.level}" oninput="updateMon('level', this.value)"></div>
+                <div style="flex:1"><label>Race</label>
+                    <select onchange="updateMon('race', this.value)">
+                        ${['Human','Elf','Dwarf','Orc','Goblin','Dragon'].map(r => `<option ${m.race===r?'selected':''}>${r}</option>`).join('')}
+                    </select>
+                </div>
+                <div style="flex:1"><label>Class</label>
+                    <select onchange="updateMon('class', this.value)">
+                        ${['Fighter','Mage','Cleric','Rogue'].map(c => `<option ${m.class===c?'selected':''}>${c}</option>`).join('')}
+                    </select>
+                </div>
+                <div style="flex:1"><label>Gender</label>
+                    <select onchange="updateMon('gender', this.value)">
+                        <option value="neuter" ${m.gender==='neuter'?'selected':''}>Neuter</option>
+                        <option value="male" ${m.gender==='male'?'selected':''}>Male</option>
+                        <option value="female" ${m.gender==='female'?'selected':''}>Female</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="align-container" style="margin-top:10px;">
+                <label>Alignment</label>
+                <span id="align-lbl" class="align-val">${getAlignTxt(m.alignment)} (${m.alignment})</span>
+                <input type="range" min="-1250" max="1250" step="50" value="${m.alignment}" 
+                    oninput="updateAlignLabel(this.value)">
+            </div>
+
+            <label>Inventory / Loot</label>
+            <div style="display:flex; gap:5px; margin-bottom:5px;">
+                <select id="mon-inv-sel">${invOpts}</select>
+                <button class="dir-btn" onclick="addMonInv()">+</button>
+            </div>
+            <div style="margin-bottom:10px;">${invList}</div>
+
+            <label>Long Description</label>
+            <textarea rows="3" oninput="updateMon('long', this.value)">${m.long}</textarea>
+        `;
+    }
+
+    function updateMon(key, val) { activeRoom.monsters[currentEditId][key] = val; }
+    function addMonInv() {
+        const val = document.getElementById('mon-inv-sel').value;
+        if(val) { activeRoom.monsters[currentEditId].inventory.push(val); renderMonsterForm(activeRoom.monsters[currentEditId]); }
+    }
+    function removeMonInv(idx) {
+        activeRoom.monsters[currentEditId].inventory.splice(idx, 1); renderMonsterForm(activeRoom.monsters[currentEditId]);
+    }
+
+    /* --- MAP & CORE --- */
+    function syncRoom() {
+        activeRoom.name = document.getElementById('r-name').value;
+        activeRoom.longDesc = document.getElementById('r-long').value;
+        draw();
+    }
+
+    function dig(dir) {
+        let tx = activeRoom.x, ty = activeRoom.y, tz = activeRoom.z;
+        const G = 60;
+        switch(dir) {
+            case 'n': ty -= G; break; case 's': ty += G; break;
+            case 'e': tx += G; break; case 'w': tx -= G; break;
+            case 'ne': tx+=G; ty-=G; break; case 'nw': tx-=G; ty-=G; break;
+            case 'se': tx+=G; ty+=G; break; case 'sw': tx-=G; ty+=G; break;
+            case 'up': tz++; break; case 'down': tz--; break;
+        }
+        let target = rooms.find(r => r.x==tx && r.y==ty && r.z==tz);
+        if(!target) target = createRoom(tx, ty, tz, "New Room");
+        if(!links.find(l => (l.from==activeRoom.id && l.to==target.id) || (l.from==target.id && l.to==activeRoom.id))) {
+            links.push({from:activeRoom.id, to:target.id});
+        }
+        activeRoom = target; currentZ = tz;
+        document.getElementById('r-name').value = activeRoom.name;
+        document.getElementById('r-long').value = activeRoom.longDesc;
+        refreshLists(); draw();
+    }
+
+    function draw() {
+        if (!activeRoom) return;
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(canvas.width/2 + camera.x, canvas.height/2 + camera.y);
+
+        // Draw Links
+        links.forEach(l => {
+            const r1 = rooms.find(r => r.id === l.from);
+            const r2 = rooms.find(r => r.id === l.to);
+            if(!r1 || !r2 || (r1.z !== currentZ && r2.z !== currentZ)) return;
+            // Only draw flat links if both on same Z
+            if(r1.z === currentZ && r2.z === currentZ) {
+                ctx.beginPath(); ctx.strokeStyle = '#444'; ctx.lineWidth = 2;
+                ctx.moveTo(r1.x + 17, r1.y + 17); ctx.lineTo(r2.x + 17, r2.y + 17); ctx.stroke();
+            }
+        });
+
+        // Draw Rooms
+        rooms.forEach(r => {
+            if(r.z !== currentZ) return;
+            ctx.fillStyle = (r === activeRoom) ? '#e67e22' : '#2c3e50';
+            ctx.fillRect(r.x, r.y, 35, 35);
+            ctx.strokeStyle = (r === activeRoom) ? '#fff' : '#555';
+            ctx.strokeRect(r.x, r.y, 35, 35);
+            
+            // Draw UP/DOWN indicators
+            let hasUp = false, hasDown = false;
+            links.forEach(l => {
+                let otherId = (l.from === r.id) ? l.to : (l.to === r.id ? l.from : null);
+                if(otherId) {
+                    let other = rooms.find(rm => rm.id === otherId);
+                    if(other) {
+                        if(other.z > r.z) hasUp = true;
+                        if(other.z < r.z) hasDown = true;
+                    }
+                }
+            });
+
+            if(hasUp) {
+                ctx.fillStyle = "#fff";
+                ctx.beginPath(); ctx.moveTo(r.x+25, r.y+5); ctx.lineTo(r.x+30, r.y+12); ctx.lineTo(r.x+20, r.y+12); ctx.fill(); 
+            }
+            if(hasDown) {
+                ctx.fillStyle = "#fff";
+                ctx.beginPath(); ctx.moveTo(r.x+25, r.y+30); ctx.lineTo(r.x+30, r.y+23); ctx.lineTo(r.x+20, r.y+23); ctx.fill();
+            }
+
+            // Icons for contents
+            if(r.monsters.length) { ctx.fillStyle = "#8e44ad"; ctx.beginPath(); ctx.arc(r.x+35, r.y, 5, 0, 6.28); ctx.fill(); }
+            if(r.objects.length) { ctx.fillStyle = "#27ae60"; ctx.beginPath(); ctx.arc(r.x+35, r.y+35, 5, 0, 6.28); ctx.fill(); }
+            if(r.details.length) { ctx.fillStyle = "#3498db"; ctx.beginPath(); ctx.arc(r.x, r.y+35, 5, 0, 6.28); ctx.fill(); }
+        });
+        ctx.restore();
+    }
+    
+    function onDown(e) {
+        const r = canvas.getBoundingClientRect();
+        const mx = e.clientX - r.left - (canvas.width/2 + camera.x);
+        const my = e.clientY - r.top - (canvas.height/2 + camera.y);
+        const clicked = rooms.find(rm => mx>rm.x && mx<rm.x+35 && my>rm.y && my<rm.y+35 && rm.z==currentZ);
+        if(clicked) { activeRoom = clicked; document.getElementById('r-name').value=activeRoom.name; document.getElementById('r-long').value=activeRoom.longDesc; refreshLists(); draw(); }
+        else { isPanning = true; lastMouse = {x:e.clientX, y:e.clientY}; }
+    }
+    function onMove(e) {
+        if(isPanning) { camera.x += e.clientX - lastMouse.x; camera.y += e.clientY - lastMouse.y; lastMouse = {x:e.clientX, y:e.clientY}; draw(); }
+    }
+    function resize() { canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight; draw(); }
+
+    /* --- EXPORT --- */
+    function makeSafe(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || "unk"; }
+    function formatLong(fn, txt) {
+        const lines = txt.match(/.{1,70}(\s|$)/g) || [""];
+        return `    ${fn}("${lines[0].trim()}"\n` + lines.slice(1).map(l=>`      "${l.trim()}"`).join('\n') + ');';
+    }
+
+    async function exportLPC() {
+        const zip = new JSZip();
+        const area = exportSettings.areaName || "area";
+        const path = exportSettings.basePath.replace(/\/$/, '') + '/';
+        const blvl = parseInt(exportSettings.baseLevel) || 5;
+        
+        const f = zip.folder(area);
+        f.folder("include").file("include.h", `#include <std.h>\n#define MY_PATH "${path}"\n#define ROOMDIR MY_PATH+"rooms/"\n#define MONDIR MY_PATH+"mon/"\n#define OBJDIR MY_PATH+"obj/"\n#define BLVL ${blvl}`);
+        
+        const objMap = {};
+        objectLibrary.forEach(o => {
+            const fname = makeSafe(o.idName) + ".c"; // Use new ID Name for filename
+            objMap[o.id] = fname;
+            let inh = "OBJECT", xtra = "";
+            if(o.type==='weapon') { inh="WEAPON"; xtra=`    set_type("${o.subtype.toLowerCase()}");`; }
+            if(o.type==='armour') { 
+                inh="ARMOUR"; 
+                let t = o.subtype.toLowerCase();
+                let sub = "";
+                if(t.includes('head')) t = "helm";
+                else if(t.includes('torso')) t = "armour";
+                else if(t.includes('hands')) t = "gloves";
+                else if(t.includes('feet')) t = "boots";
+                if(o.subtype.includes("Leather")) sub = `    set_subtype("leather");`;
+                else if(o.subtype.includes("Mail")) sub = `    set_subtype("mail");`;
+                else if(o.subtype.includes("Plate")) sub = `    set_subtype("plate");`;
+                xtra=`    set_type("${t}");\n${sub}`;
+            }
+            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${inh};\nvoid create() {\n    ::create();\n    set_name("${o.idName}");\n    set_id(({"${makeSafe(o.idName)}","${o.type}"}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(BLVL);\n${xtra}\n}`);
+        });
+
+        const monMap = {};
+        rooms.forEach(r => r.monsters.forEach(m => {
+            const key = m.idName+m.race;
+            if(!monMap[key]) {
+                const fname = makeSafe(m.idName) + ".c";
+                monMap[key] = fname;
+                let gear = "";
+                m.inventory.forEach(id => { if(objMap[id]) gear += `    add_object(OBJDIR+"${objMap[id]}");\n`; });
+                if(gear) gear += `    command("wear all");\n    command("wield all");`;
+                
+                // Calculate Relative Level
+                const lvlOffset = (m.level - blvl);
+                const lvlStr = lvlOffset === 0 ? "BLVL" : (lvlOffset > 0 ? `BLVL+${lvlOffset}` : `BLVL${lvlOffset}`);
+
+                f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${m.idName}");\n    set_id(({"${makeSafe(m.idName)}","${m.race.toLowerCase()}"}));\n    set_short("${m.short}");\n    set_long("${m.long}");\n    set_level(${lvlStr});\n    set_race("${m.race.toLowerCase()}");\n    set_class("${m.class.toLowerCase()}");\n    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${gear}\n}`);
+            }
+        }));
+
+        const rMap = {}; const names = {};
+        rooms.forEach(r => { let n = makeSafe(r.name); names[n] = (names[n]||0) + 1; rMap[r.id] = (names[n]>1 ? `${n}_${names[n]}` : n) + ".c"; });
+
+        rooms.forEach(r => {
+            let ex = [], mons = [], objs = [], dets = [];
+            links.forEach(l => {
+                let tr = null;
+                if(l.from==r.id) tr=rooms.find(x=>x.id==l.to);
+                else if(l.to==r.id) tr=rooms.find(x=>x.id==l.from);
+                if(tr) {
+                    let d="unknown";
+                    if(tr.z>r.z)d="up"; else if(tr.z<r.z)d="down";
+                    else if(tr.y<r.y)d="north"; else if(tr.y>r.y)d="south";
+                    else if(tr.x>r.x)d="east"; else if(tr.x<r.x)d="west";
+                    ex.push(`        "${d}" : ROOMDIR+"${rMap[tr.id].replace('.c','')}"`);
+                }
+            });
+            r.monsters.forEach(m => mons.push(`    add_object(MONDIR+"${monMap[m.idName+m.race]}", "", RT_TRACK);`));
+            r.objects.forEach(id => { if(objMap[id]) objs.push(`    add_object(OBJDIR+"${objMap[id]}", "", RT_TRACK);`); });
+            r.details.forEach(d => {
+                const keys = d.keywords.split(',').map(k=>`"${k.trim()}"`).join(',');
+                dets.push(`        ({${keys}}) : "${d.desc}"`);
+            });
+
+            let exCode = ex.length ? `    set_exits(([\n${ex.join(',\n')}\n    ]));` : "";
+            let detCode = dets.length ? `    set_items(([\n${dets.join(',\n')}\n    ]));` : "";
+            
+            f.folder("rooms").file(rMap[r.id], `#include "../include/include.h"\ninherit ROOM;\nvoid create() {\n    ::create();\n${formatLong("set_short",r.name)}\n${formatLong("set_long",r.longDesc)}\n${detCode}\n${exCode}\n${mons.join('\n')}\n${objs.join('\n')}\n}`);
+        });
+
+        saveAs(await zip.generateAsync({type:"blob"}), `${area}.zip`);
+    }
+
+    function downloadJSON() { 
+        const payload = {
+            rooms, links, objectLibrary, 
+            exportSettings
+        };
+        saveAs(new Blob([JSON.stringify(payload)],{type:'application/json'}), 'mud.json'); 
+    }
+    
+    function importData() {
+        let i = document.createElement('input'); i.type='file';
+        i.onchange=e=>{ 
+            let r=new FileReader(); 
+            r.onload=ev=>{ 
+                let d=JSON.parse(ev.target.result); 
+                rooms=d.rooms; links=d.links; objectLibrary=d.objectLibrary||[]; 
+                if(d.exportSettings) {
+                    exportSettings = d.exportSettings;
+                    document.getElementById('area-name').value = exportSettings.areaName;
+                    document.getElementById('base-path').value = exportSettings.basePath;
+                    document.getElementById('base-level').value = exportSettings.baseLevel;
+                }
+                activeRoom=rooms[0]; currentZ=activeRoom.z; refreshLists(); draw(); 
+            }; 
+            r.readAsText(e.target.files[0]); 
+        }; 
+        i.click();
+    }
+
+    init();
+</script>
+</body>
+</html>
