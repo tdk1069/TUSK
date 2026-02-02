@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MUD World Builder Pro v7.5</title>
+    <title>MUD World Builder Pro v7.8</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -519,6 +519,7 @@
             <div style="display:flex; gap:10px;">
                 <div style="flex:1"><label>Type</label><select onchange="updateObj('type', this.value); openObjectModal(currentEditId)">
                     <option value="simple" ${obj.type==='simple'?'selected':''}>Simple</option>
+                    <option value="key" ${obj.type==='key'?'selected':''}>Key</option>
                     <option value="weapon" ${obj.type==='weapon'?'selected':''}>Weapon</option>
                     <option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option>
                 </select></div>
@@ -616,6 +617,7 @@
             const fname = makeSafe(o.idName) + ".c";
             objMap[o.id] = fname;
             let xtra = "";
+            if(o.type==='key') xtra=`    set_key_id("${o.idName}");`;
             if(o.type==='weapon') xtra=`    set_type("${o.subtype.toLowerCase()}");`;
             if(o.type==='armour') {
                 let t = o.subtype.toLowerCase(); let sub="";
@@ -625,7 +627,7 @@
                 if(t.includes('head')) t="helm"; else if(t.includes('torso')) t="armour"; else if(t.includes('hands')) t="gloves"; else if(t.includes('feet')) t="boots";
                 xtra=`    set_type("${t}");\n    ${sub}`;
             }
-            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':'OBJECT')};\nvoid create() {\n    ::create();\n    set_name("${o.idName}");\n    set_id(({"${makeSafe(o.idName)}","${o.type}"}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(BLVL);\n${xtra}\n}`);
+            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${o.idName}");\n    set_id(({"${makeSafe(o.idName)}","${o.type}"}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(BLVL);\n${xtra}\n}`);
         });
 
         // AUTO-GEN KEYS (New Feature)
@@ -640,7 +642,7 @@
 
         autoKeys.forEach(k => {
             const fname = makeSafe(k) + ".c";
-            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit OBJECT;\nvoid create() {\n    ::create();\n    set_name("${k}");\n    set_id(({"${k}", "key"}));\n    set_short("a ${k}");\n    set_long("It is a ${k}, used to unlock something.");\n    set_level(1);\n}`);
+            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit KEY;\nvoid create() {\n    ::create();\n    set_name("${k}");\n    set_id(({"${k}", "key"}));\n    set_key_id("${k}");\n    set_short("a ${k}");\n    set_long("It is a ${k}, used to unlock something.");\n    set_level(1);\n}`);
         });
 
         // Monsters
