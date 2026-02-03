@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MUD World Builder Pro v8.0</title>
+    <title>MUD World Builder Pro v8.4</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -48,6 +48,21 @@
         /* Alignment Slider */
         .align-container { background: #111; padding: 10px; border-radius: 4px; text-align: center; margin-bottom: 10px; border: 1px solid #333; }
         .align-val { color: var(--accent); font-weight: bold; font-size: 1.1rem; display: block; margin-bottom: 5px; }
+
+        /* Tooltip */
+        .help-tip {
+            display: inline-block; cursor: help; color: var(--accent);
+            font-size: 0.7rem; margin-left: 6px; border: 1px solid var(--accent);
+            width: 14px; height: 14px; line-height: 14px; text-align: center; border-radius: 50%;
+            position: relative; font-weight: bold;
+        }
+        .help-tip:hover::after {
+            content: attr(data-tip);
+            position: absolute; left: 20px; top: -5px; width: 220px;
+            background: #252525; color: #eee; padding: 8px; border: 1px solid #555;
+            z-index: 100; font-size: 0.75rem; border-radius: 4px; pointer-events: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); font-weight: normal; line-height: 1.3;
+        }
 
         /* Map */
         #canvas-container { flex-grow: 1; position: relative; }
@@ -190,9 +205,10 @@
 
 <script>
     /* --- CONFIG & HELPERS --- */
-    const WEAPON_TYPES = ["Blade", "Blunt", "Knife", "Polearm", "Projectile", "Staff", "Thrown", "Two Handed", "Whip"];
-    const ARMOUR_TYPES = ["Amulet", "Cloak", "Ring", "Shield", "Cloth Head", "Cloth Torso", "Cloth Hands", "Cloth Feet", "Leather Head", "Leather Torso", "Leather Hands", "Leather Feet", "Mail Head", "Mail Torso", "Mail Hands", "Mail Feet", "Plate Head", "Plate Torso", "Plate Hands", "Plate Feet"];
-    
+    const VALID_WEAPON_TYPES = ["blade", "knife", "projectile", "blunt", "two handed", "polearm", "staff", "whip", "thrown"];
+    const VALID_ARMOUR_TYPES = ["helmet", "armour", "cloak", "shield", "gloves", "ring", "boots", "amulet", "barding", "necklace", "circlet", "bracelet", "anklet"];
+    const VALID_MATERIALS = ["cloth", "leather", "mail", "plate"];
+
     // Numeric keys for logic
     const ALIGN_MAP = {
         1250: "SAINTLY", 1000: "RIGHTEOUS", 750: "GOOD", 500: "BENEVOLENT", 250: "NICE",
@@ -207,6 +223,10 @@
             Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev
         );
         return ALIGN_MAP[closest];
+    }
+    
+    function makeTip(text) {
+        return `<span class="help-tip" data-tip="${text}">?</span>`;
     }
 
     /* --- STATE --- */
@@ -276,7 +296,7 @@
         
         // Initial Data
         activeRoom = createRoom(0, 0, 0, "The Start");
-        createObjectDef("sword", "a rusty sword", "weapon", "Blade");
+        createObjectDef("sword", "a rusty sword", "weapon", "blade");
         
         // Force rendering logic immediately
         setTimeout(() => {
@@ -416,6 +436,7 @@
             </select>
             <div id="door-opts" style="display:${d.active?'block':'none'}">
                 <label>Door ID (Name)</label><input type="text" value="${d.id}" oninput="updateDoor('id', this.value)">
+                <p style="color:#666; font-size:0.7rem;">* Spaces are allowed (e.g., "office door").</p>
                 <label>State</label><select onchange="updateDoor('state', this.value)">
                     <option value="open" ${d.state==='open'?'selected':''}>Open</option>
                     <option value="closed" ${d.state==='closed'?'selected':''}>Closed</option>
@@ -473,11 +494,16 @@
         }).join('');
 
         const alignLabel = getAlignLabel(m.alignment);
+        
+        // Tooltip texts
+        const idTip = "Comma-separated list. First is the primary ID (set_name). The rest are aliases (set_id). E.g: 'orc chief, chief, orc'. Spaces are preserved.";
+        const shortTip = "What the player sees in a room. E.g: 'a large orc'.";
+        const longTip = "What the player sees when looking at it.";
 
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>ID Name</label><input type="text" value="${m.idName}" oninput="updateMon('idName', this.value)"></div>
-                <div style="flex:1"><label>Short Desc</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div>
+                <div style="flex:1"><label>ID Name ${makeTip(idTip)}</label><input type="text" value="${m.idName}" oninput="updateMon('idName', this.value)"></div>
+                <div style="flex:1"><label>Short Desc ${makeTip(shortTip)}</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div>
             </div>
             <div style="display:flex; gap:10px;">
                 <div style="flex:1"><label>Lvl</label><input type="number" value="${m.level}" oninput="updateMon('level', this.value)"></div>
@@ -495,7 +521,7 @@
             <div style="display:flex; gap:5px;"><select id="mon-inv-sel">${invOpts}</select><button class="dir-btn" onclick="addMonInv()">+</button></div>
             <div style="margin-bottom:10px;">${invList}</div>
             
-            <label>Long Description</label>
+            <label>Long Description ${makeTip(longTip)}</label>
             <textarea rows="3" oninput="updateMon('long', this.value)">${m.long}</textarea>
         `;
     }
@@ -522,29 +548,59 @@
         const obj = objectLibrary[currentEditId];
         openModal("Edit Object");
         
-        let subHtml = `<input disabled style="background:#222; border:none;" placeholder="N/A">`;
-        if(obj.type === 'weapon') subHtml = `<select onchange="updateObj('subtype', this.value)">${WEAPON_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
-        if(obj.type === 'armour') subHtml = `<select onchange="updateObj('subtype', this.value)">${ARMOUR_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
+        // Subtype (Type selection)
+        let typeSelect = `<input disabled style="background:#222; border:none;" placeholder="N/A">`;
+        if(obj.type === 'weapon') {
+            typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_WEAPON_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
+        } else if(obj.type === 'armour') {
+            typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_ARMOUR_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
+        }
+
+        // Material (Only for Armour)
+        let matSelect = "";
+        if(obj.type === 'armour') {
+             matSelect = `<div style="flex:1"><label>Material (Subtype)</label>
+             <select onchange="updateObj('material', this.value)">${VALID_MATERIALS.map(t=>`<option ${obj.material===t?'selected':''}>${t}</option>`)}</select></div>`;
+        }
+
+        // Tooltip texts
+        const idTip = "Comma-separated list. First is the primary ID (set_name). The rest are aliases (set_id). E.g: 'yorik's hat, hat, old hat'. Spaces are preserved.";
+        const shortTip = "What the player sees in a room. E.g: 'a rusty sword'.";
+        const longTip = "What the player sees when looking at it.";
 
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>ID</label><input type="text" value="${obj.idName}" oninput="updateObj('idName', this.value)"></div>
-                <div style="flex:1"><label>Short</label><input type="text" value="${obj.short}" oninput="updateObj('short', this.value)"></div>
+                <div style="flex:1"><label>ID ${makeTip(idTip)}</label><input type="text" value="${obj.idName}" oninput="updateObj('idName', this.value)"></div>
+                <div style="flex:1"><label>Short ${makeTip(shortTip)}</label><input type="text" value="${obj.short}" oninput="updateObj('short', this.value)"></div>
             </div>
             <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>Type</label><select onchange="updateObj('type', this.value); openObjectModal(currentEditId)">
+                <div style="flex:1"><label>Category</label><select onchange="updateObj('type', this.value); openObjectModal(currentEditId)">
                     <option value="simple" ${obj.type==='simple'?'selected':''}>Simple</option>
                     <option value="key" ${obj.type==='key'?'selected':''}>Key</option>
                     <option value="weapon" ${obj.type==='weapon'?'selected':''}>Weapon</option>
                     <option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option>
                 </select></div>
-                <div style="flex:1"><label>Subtype</label>${subHtml}</div>
+                <div style="flex:1"><label>Type</label>${typeSelect}</div>
+                ${matSelect}
             </div>
-            <label>Long Desc</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>
+            <label>Long Desc ${makeTip(longTip)}</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>
         `;
     }
-    function createObjectDef(idName, short, type, subtype) { objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype }); }
-    function updateObj(k,v) { objectLibrary[currentEditId][k] = v; if(k==='type') objectLibrary[currentEditId].subtype=""; }
+    
+    function createObjectDef(idName, short, type, subtype) { 
+        objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype, material: "plate" }); 
+    }
+    
+    function updateObj(k,v) { 
+        objectLibrary[currentEditId][k] = v; 
+        if(k==='type') {
+            // Reset subtype/material defaults when switching main category
+            if(v==='weapon') objectLibrary[currentEditId].subtype="blade";
+            if(v==='armour') { objectLibrary[currentEditId].subtype="helmet"; objectLibrary[currentEditId].material="plate"; }
+            else objectLibrary[currentEditId].subtype="";
+        } 
+    }
+    
     function addObjToRoom() { const v=document.getElementById('room-obj-select').value; if(v){activeRoom.objects.push(v); refreshLists(); draw();} }
 
     /* --- MAP DRAWING --- */
@@ -629,27 +685,31 @@
         // Export User Objects
         const objMap = {};
         objectLibrary.forEach(o => {
-            const fname = makeSafe(o.idName) + ".c";
+            const parts = o.idName.split(',').map(s => s.trim());
+            const primeId = parts[0].toLowerCase(); // First ID for set_name, spaces preserved
+            const allIds = parts.map(s => `"${s.toLowerCase()}"`); // All IDs quoted, spaces preserved
+            
+            // Filename based on first ID only (underscores)
+            const fname = makeSafe(parts[0]) + ".c";
+            
             objMap[o.id] = fname;
             let xtra = "";
-            if(o.type==='key') xtra=`    set_key_id("${o.idName}");`;
-            if(o.type==='weapon') xtra=`    set_type("${o.subtype.toLowerCase()}");`;
+            if(o.type==='key') xtra=`    set_key_id("${primeId}");`;
+            if(o.type==='weapon') xtra=`    set_type("${o.subtype}");`;
             if(o.type==='armour') {
-                let t = o.subtype.toLowerCase(); let sub="";
-                if(t.includes('leather')) sub='set_subtype("leather");';
-                else if(t.includes('mail')) sub='set_subtype("mail");';
-                else if(t.includes('plate')) sub='set_subtype("plate");';
-                if(t.includes('head')) t="helm"; else if(t.includes('torso')) t="armour"; else if(t.includes('hands')) t="gloves"; else if(t.includes('feet')) t="boots";
-                xtra=`    set_type("${t}");\n    ${sub}`;
+                xtra=`    set_type("${o.subtype}");\n    set_subtype("${o.material}");`;
             }
-            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${o.idName}");\n    set_id(({"${makeSafe(o.idName)}","${o.type}"}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(BLVL);\n${xtra}\n}`);
+            
+            // Push type to ID array
+            allIds.push(`"${o.type}"`);
+
+            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(BLVL);\n${xtra}\n}`);
         });
 
-        // AUTO-GEN KEYS (New Feature)
+        // AUTO-GEN KEYS
         const autoKeys = new Set();
         links.forEach(l => {
             if(l.door && l.door.active && l.door.key) {
-                // Check if key exists in library
                 const exists = objectLibrary.some(o => o.idName === l.door.key || o.id === l.door.key);
                 if(!exists) autoKeys.add(l.door.key);
             }
@@ -663,16 +723,26 @@
         // Monsters
         const monMap = {};
         rooms.forEach(r => r.monsters.forEach(m => {
-            const key = m.idName+m.race;
+            const parts = m.idName.split(',').map(s => s.trim());
+            const primeId = parts[0].toLowerCase();
+            const allIds = parts.map(s => `"${s.toLowerCase()}"`);
+            
+            // Add race to IDs
+            allIds.push(`"${m.race.toLowerCase()}"`);
+            
+            // Unique key for map based on first part of ID + race
+            const key = parts[0] + m.race;
+            
             if(!monMap[key]) {
-                const fname = makeSafe(m.idName) + ".c";
+                const fname = makeSafe(parts[0]) + ".c";
                 monMap[key] = fname;
                 let gear = "";
                 m.inventory.forEach(id => { if(objMap[id]) gear += `    add_object(OBJDIR+"${objMap[id]}");\n`; });
                 if(gear) gear += `    command("wear all");\n    command("wield all");`;
                 let lvlOff = m.level - blvl;
                 let lvlStr = lvlOff === 0 ? "BLVL" : (lvlOff > 0 ? `BLVL+${lvlOff}` : `BLVL${lvlOff}`);
-                f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${m.idName}");\n    set_id(({"${makeSafe(m.idName)}","${m.race.toLowerCase()}"}));\n    set_short("${m.short}");\n    set_long("${m.long}");\n    set_level(${lvlStr});\n    set_race("${m.race.toLowerCase()}");\n    set_class("${m.class.toLowerCase()}");\n    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${gear}\n}`);
+                
+                f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n    set_short("${m.short}");\n    set_long("${m.long}");\n    set_level(${lvlStr});\n    set_race("${m.race.toLowerCase()}");\n    set_class("${m.class.toLowerCase()}");\n    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${gear}\n}`);
             }
         }));
 
@@ -694,6 +764,7 @@
                     else { if(tr.x>r.x)d="east"; else if(tr.x<r.x)d="west"; }
                     ex.push(`        "${d}" : ROOMDIR+"${rMap[tr.id].replace('.c','')}"`);
                     if(l.door && l.door.active) {
+                        // DOOR ID: Ensure spaces are preserved (l.door.id is not makeSafe'd here)
                         let k = l.door.key ? `"${l.door.key}"` : "0";
                         let istate = "0";
                         if(l.door.state === 'open') istate = "ISTATE_OPEN";
@@ -721,19 +792,21 @@
                     smells.push(`    set_smell(({${keys}}), "${det.desc}");`);
                 }
             });
-            r.monsters.forEach(m => mons.push(`    add_object(MONDIR+"${monMap[m.idName+m.race]}", "", RT_TRACK);`));
+            r.monsters.forEach(m => {
+                 // Use first part of ID + race for lookup
+                 const parts = m.idName.split(',').map(s => s.trim());
+                 mons.push(`    add_object(MONDIR+"${monMap[parts[0]+m.race]}", "", RT_TRACK);`);
+            });
             r.objects.forEach(id => { if(objMap[id]) objs.push(`    add_object(OBJDIR+"${objMap[id]}", "", RT_TRACK);`); });
 
             let exCode = ex.length ? `    set_exits(([\n${ex.join(',\n')}\n    ]));` : "";
             let lookCode = looks.length ? `    set_items(([\n${looks.join(',\n')}\n    ]));` : "";
             
-            // New Format: Single lines, not inside a mapping
             let listenCode = listens.length ? listens.join('\n') : "";
             let smellCode = smells.length ? smells.join('\n') : "";
             
             let commentBlock = r.comments ? r.comments.split('\n').map(l=>`// ${l}`).join('\n') + "\n" : "";
 
-            // Logic to omit set_terrain if "indoor"
             let terrainCode = "";
             if (r.terrain && r.terrain !== "indoor") {
                 terrainCode = `    set_terrain("${r.terrain}");\n`;
