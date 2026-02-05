@@ -511,7 +511,7 @@
             </div>
             <div style="display:flex; gap:10px;">
                 <div style="flex:1"><label>Lvl Adj ${makeTip(lvlTip)}</label><input type="number" value="${m.levelAdj}" oninput="updateMon('levelAdj', this.value)"></div>
-                <div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Human','Elf','Orc','Dragon'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div>
+                <div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Arachnid','Artrell','Aurin','Basilisk','Bat','Bee','Beetle','Beholder','Bird','Carrion-crawler','Centaur','Centipede','Chimera','Cockatrice','Crocodile','Crustacean','Dagon','Drider','Drow','Dwarf','Elf','Equine','Equine-winged','Faerie','Fish','Frog','Giant','Gnome','Half-Elf','Halfling','Half-Orc','Human','Humanoid-tail','Insectoid','nsectoid-winged','Lizardman','Merperson','Null','Nymph','Octopus','Otyugh','Quadruped','Quadruped-winged','Ray','Reptile','Reptile-winged','Satyr','Slime','Snakeman','Snae-winged','Turtle','Worm'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div>
                 <div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${['None','Fighter','Warmage','Cleric','Rogue','Druid','Monk','Ranger'].map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div>
             </div>
             
