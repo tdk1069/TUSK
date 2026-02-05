@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MUD World Builder Pro v8.0</title>
+    <title>MUD World Builder Pro v8.2</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -179,7 +179,7 @@
         <h3>LPC Export Settings</h3>
         <label>Area Name</label> <input type="text" id="area-name" value="new_area" oninput="exportSettings.areaName=this.value">
         <label>Base Path</label> <input type="text" id="base-path" value="/d/domain/new_area/" oninput="exportSettings.basePath=this.value">
-        <label>Base Level</label> <input type="number" id="base-level" value="5" oninput="exportSettings.baseLevel=this.value">
+        <label>Base Level</label> <input type="number" id="base-level" value="5" oninput="exportSettings.baseLevel=this.value; updateLevelHelper()">
         <button class="action-btn btn-red" style="margin-top:15px;" onclick="exportLPC()">Export .zip (LPC)</button>
     </div>
 </div>
@@ -207,6 +207,27 @@
             Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev
         );
         return ALIGN_MAP[closest];
+    }
+    
+    // Updated Logic: Inputs are now RELATIVE offsets (0 means BASE_LEVEL)
+    function getLevelHelperText(offset) {
+        const base = parseInt(exportSettings.baseLevel) || 5;
+        const off = parseInt(offset) || 0;
+        const finalLvl = base + off;
+        
+        let desc = "BASE_LEVEL";
+        if (off > 0) desc += ` + ${off}`;
+        if (off < 0) desc += ` ${off}`; // minus sign is in the number
+        
+        return `Final: ${finalLvl} (${desc})`;
+    }
+
+    function updateLevelHelper() {
+        // Triggers UI update if a modal with level input is open
+        if(document.getElementById('lvl-helper')) {
+            const val = document.getElementById('lvl-input').value;
+            document.getElementById('lvl-helper').innerText = getLevelHelperText(val);
+        }
     }
 
     /* --- STATE --- */
@@ -355,24 +376,27 @@
         // Standard Lists
         document.getElementById('room-obj-list').innerHTML = activeRoom.objects.map((oid,i) => {
             const o = objectLibrary.find(x=>x.id==oid);
+            // Show offset in list? Or simplified? Let's just show name.
             return o ? `<div class="list-item"><span>${o.short}</span><button class="btn-red btn-sm" onclick="activeRoom.objects.splice(${i},1);refreshLists()">X</button></div>` : '';
         }).join('');
         
         document.getElementById('room-obj-select').innerHTML = objectLibrary.map(o => `<option value="${o.id}">${o.short}</option>`).join('');
 
-        document.getElementById('global-obj-list').innerHTML = objectLibrary.map((o,i) => 
-            `<div class="list-item" onclick="openObjectModal(${i})">
-                <div><h4>${o.idName}</h4><span>${o.type}</span></div>
+        document.getElementById('global-obj-list').innerHTML = objectLibrary.map((o,i) => {
+            const lvlTxt = o.level == 0 ? "Base" : (o.level > 0 ? `+${o.level}` : o.level);
+            return `<div class="list-item" onclick="openObjectModal(${i})">
+                <div><h4>${o.idName}</h4><span>${o.type} [Lvl: ${lvlTxt}]</span></div>
                 <button class="btn-red btn-sm" onclick="event.stopPropagation(); objectLibrary.splice(${i},1); refreshLists();">X</button>
-            </div>`
-        ).join('');
+            </div>`;
+        }).join('');
 
-        document.getElementById('monster-list').innerHTML = activeRoom.monsters.map((m,i) => 
-            `<div class="list-item" onclick="openMonsterModal(${i})">
-                <div><h4>${m.short}</h4><span>Lvl ${m.level} ${m.race}</span></div>
+        document.getElementById('monster-list').innerHTML = activeRoom.monsters.map((m,i) => {
+             const lvlTxt = m.level == 0 ? "Base" : (m.level > 0 ? `+${m.level}` : m.level);
+             return `<div class="list-item" onclick="openMonsterModal(${i})">
+                <div><h4>${m.short}</h4><span>${m.race} [Lvl: ${lvlTxt}]</span></div>
                 <button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.monsters.splice(${i},1); refreshLists();">X</button>
-            </div>`
-        ).join('');
+            </div>`;
+        }).join('');
     }
 
     function syncRoom() {
@@ -442,24 +466,34 @@
         openModal("Edit Detail / Sense");
         document.getElementById('modal-body').innerHTML = `
             <label>Type</label>
-            <select onchange="activeRoom.details[currentEditId].type = this.value">
+            <select id="det-type" onchange="updateDetailType(this.value)">
                 <option value="look" ${d.type==='look'?'selected':''}>Look (Item)</option>
                 <option value="listen" ${d.type==='listen'?'selected':''}>Listen (Sound)</option>
                 <option value="smell" ${d.type==='smell'?'selected':''}>Smell (Scent)</option>
             </select>
-            <label>Keywords</label><input type="text" value="${d.keywords}" oninput="activeRoom.details[currentEditId].keywords = this.value">
+            <label>Keywords</label><input type="text" id="det-kw" value="${d.keywords}" oninput="activeRoom.details[currentEditId].keywords = this.value">
             <label>Description</label><textarea rows="6" oninput="activeRoom.details[currentEditId].desc = this.value">${d.desc}</textarea>
         `;
     }
 
-    /* --- MONSTER WITH SLIDER --- */
+    function updateDetailType(val) {
+        activeRoom.details[currentEditId].type = val;
+        const kwInput = document.getElementById('det-kw');
+        // Auto-populate default if switching to listen/smell and current value is simple or empty
+        if((val === 'listen' || val === 'smell') && (kwInput.value === 'sign' || kwInput.value === '')) {
+            kwInput.value = 'default';
+            activeRoom.details[currentEditId].keywords = 'default';
+        }
+    }
+
+    /* --- MONSTER MODAL --- */
     function openMonsterModal(idx) {
         currentEditType = 'monster';
         currentEditId = idx;
         if(idx === -1) {
             activeRoom.monsters.push({
                 id: Date.now(), idName: "guard", short: "a guard", long: "A guard.",
-                race: "Human", class: "Fighter", level: 1, gender: "neuter", alignment: 0, inventory: []
+                race: "Human", class: "Fighter", level: 0, gender: "neuter", alignment: 0, inventory: []
             });
             currentEditId = activeRoom.monsters.length - 1;
         }
@@ -473,6 +507,7 @@
         }).join('');
 
         const alignLabel = getAlignLabel(m.alignment);
+        const levelHelper = getLevelHelperText(m.level);
 
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;">
@@ -480,9 +515,12 @@
                 <div style="flex:1"><label>Short Desc</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div>
             </div>
             <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>Lvl</label><input type="number" value="${m.level}" oninput="updateMon('level', this.value)"></div>
+                <div style="flex:1">
+                    <label>Lvl Offset <span id="lvl-helper" style="font-size:0.6rem; color:var(--accent)">${levelHelper}</span></label>
+                    <input type="number" id="lvl-input" value="${m.level}" oninput="updateMon('level', this.value); updateLevelHelper()">
+                </div>
                 <div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Human','Elf','Orc','Dragon'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div>
-                <div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${['Fighter','Mage','Cleric','Rogue'].map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div>
+                <div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${['None','Fighter','Mage','Cleric','Rogue'].map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div>
             </div>
             
             <div class="align-container" style="margin-top:10px;">
@@ -526,6 +564,8 @@
         if(obj.type === 'weapon') subHtml = `<select onchange="updateObj('subtype', this.value)">${WEAPON_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
         if(obj.type === 'armour') subHtml = `<select onchange="updateObj('subtype', this.value)">${ARMOUR_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
 
+        const levelHelper = getLevelHelperText(obj.level);
+
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;">
                 <div style="flex:1"><label>ID</label><input type="text" value="${obj.idName}" oninput="updateObj('idName', this.value)"></div>
@@ -539,11 +579,15 @@
                     <option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option>
                 </select></div>
                 <div style="flex:1"><label>Subtype</label>${subHtml}</div>
+                <div style="flex:1">
+                    <label>Lvl Offset <span id="lvl-helper" style="font-size:0.6rem; color:var(--accent)">${levelHelper}</span></label>
+                    <input type="number" id="lvl-input" value="${obj.level}" oninput="updateObj('level', this.value); updateLevelHelper()">
+                </div>
             </div>
             <label>Long Desc</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>
         `;
     }
-    function createObjectDef(idName, short, type, subtype) { objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype }); }
+    function createObjectDef(idName, short, type, subtype) { objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype, level: 0 }); }
     function updateObj(k,v) { objectLibrary[currentEditId][k] = v; if(k==='type') objectLibrary[currentEditId].subtype=""; }
     function addObjToRoom() { const v=document.getElementById('room-obj-select').value; if(v){activeRoom.objects.push(v); refreshLists(); draw();} }
 
@@ -617,6 +661,14 @@
         return `    ${fn}("${lines[0].trim()}"\n` + lines.slice(1).map(l=>`      "${l.trim()}"`).join('\n') + ');';
     }
 
+    // Helper to calculate offset code (BASE_LEVEL + x)
+    function getLvlCode(offset) {
+        const off = parseInt(offset) || 0;
+        if(off === 0) return "BASE_LEVEL";
+        if(off > 0) return `BASE_LEVEL+${off}`;
+        return `BASE_LEVEL${off}`; // e.g. "BASE_LEVEL-2"
+    }
+
     async function exportLPC() {
         const zip = new JSZip();
         const area = exportSettings.areaName || "area";
@@ -624,7 +676,7 @@
         const blvl = parseInt(exportSettings.baseLevel) || 5;
         
         const f = zip.folder(area);
-        f.folder("include").file("include.h", `#include <std.h>\n#define MY_PATH "${path}"\n#define ROOMDIR MY_PATH+"rooms/"\n#define MONDIR MY_PATH+"mon/"\n#define OBJDIR MY_PATH+"obj/"\n#define BLVL ${blvl}`);
+        f.folder("include").file("include.h", `#include <std.h>\n#define MY_PATH "${path}"\n#define ROOMDIR MY_PATH+"rooms/"\n#define MONDIR MY_PATH+"mon/"\n#define OBJDIR MY_PATH+"obj/"\n#define BASE_LEVEL ${blvl}`);
         
         // Export User Objects
         const objMap = {};
@@ -642,10 +694,13 @@
                 if(t.includes('head')) t="helm"; else if(t.includes('torso')) t="armour"; else if(t.includes('hands')) t="gloves"; else if(t.includes('feet')) t="boots";
                 xtra=`    set_type("${t}");\n    ${sub}`;
             }
-            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${o.idName}");\n    set_id(({"${makeSafe(o.idName)}","${o.type}"}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(BLVL);\n${xtra}\n}`);
+            
+            let lvlStr = getLvlCode(o.level);
+            
+            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${o.idName}");\n    set_id(({"${makeSafe(o.idName)}","${o.type}"}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(${lvlStr});\n${xtra}\n}`);
         });
 
-        // AUTO-GEN KEYS (New Feature)
+        // AUTO-GEN KEYS
         const autoKeys = new Set();
         links.forEach(l => {
             if(l.door && l.door.active && l.door.key) {
@@ -670,9 +725,15 @@
                 let gear = "";
                 m.inventory.forEach(id => { if(objMap[id]) gear += `    add_object(OBJDIR+"${objMap[id]}");\n`; });
                 if(gear) gear += `    command("wear all");\n    command("wield all");`;
-                let lvlOff = m.level - blvl;
-                let lvlStr = lvlOff === 0 ? "BLVL" : (lvlOff > 0 ? `BLVL+${lvlOff}` : `BLVL${lvlOff}`);
-                f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${m.idName}");\n    set_id(({"${makeSafe(m.idName)}","${m.race.toLowerCase()}"}));\n    set_short("${m.short}");\n    set_long("${m.long}");\n    set_level(${lvlStr});\n    set_race("${m.race.toLowerCase()}");\n    set_class("${m.class.toLowerCase()}");\n    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${gear}\n}`);
+                
+                let lvlStr = getLvlCode(m.level);
+                
+                let classLine = "";
+                if(m.class && m.class.toLowerCase() !== "none") {
+                    classLine = `    set_class("${m.class.toLowerCase()}");\n`;
+                }
+
+                f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${m.idName}");\n    set_id(({"${makeSafe(m.idName)}","${m.race.toLowerCase()}"}));\n    set_short("${m.short}");\n    set_long("${m.long}");\n    set_level(${lvlStr});\n    set_race("${m.race.toLowerCase()}");\n${classLine}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${gear}\n}`);
             }
         }));
 
@@ -727,7 +788,6 @@
             let exCode = ex.length ? `    set_exits(([\n${ex.join(',\n')}\n    ]));` : "";
             let lookCode = looks.length ? `    set_items(([\n${looks.join(',\n')}\n    ]));` : "";
             
-            // New Format: Single lines, not inside a mapping
             let listenCode = listens.length ? listens.join('\n') : "";
             let smellCode = smells.length ? smells.join('\n') : "";
             
