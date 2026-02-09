@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MUD World Builder Pro v8.5</title>
+    <title>MUD World Builder Pro v8.6</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -208,25 +208,55 @@
     const VALID_WEAPON_TYPES = ["blade", "knife", "projectile", "blunt", "two handed", "polearm", "staff", "whip", "thrown"];
     const VALID_ARMOUR_TYPES = ["helmet", "armour", "cloak", "shield", "gloves", "ring", "boots", "amulet", "barding", "necklace", "circlet", "bracelet", "anklet"];
     const VALID_MATERIALS = ["cloth", "leather", "mail", "plate"];
-
-    // Numeric keys for logic
-    const ALIGN_MAP = {
-        1250: "SAINTLY", 1000: "RIGHTEOUS", 750: "GOOD", 500: "BENEVOLENT", 250: "NICE",
-        0: "NEUTRAL",
-        "-250": "MEAN", "-500": "MALEVOLENT", "-750": "EVIL", "-1000": "NEFARIOUS", "-1250": "DEMONIC"
-    };
+    const ALIGN_MAP = { 1250: "SAINTLY", 1000: "RIGHTEOUS", 750: "GOOD", 500: "BENEVOLENT", 250: "NICE", 0: "NEUTRAL", "-250": "MEAN", "-500": "MALEVOLENT", "-750": "EVIL", "-1000": "NEFARIOUS", "-1250": "DEMONIC" };
     const ALIGN_KEYS = Object.keys(ALIGN_MAP).map(Number).sort((a,b) => a - b); 
 
     function getAlignLabel(val) {
         val = parseInt(val);
-        let closest = ALIGN_KEYS.reduce((prev, curr) => 
-            Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev
-        );
+        let closest = ALIGN_KEYS.reduce((prev, curr) => Math.abs(curr - val) < Math.abs(prev - val) ? curr : prev);
         return ALIGN_MAP[closest];
     }
     
-    function makeTip(text) {
-        return `<span class="help-tip" data-tip="${text}">?</span>`;
+    function makeTip(text) { return `<span class="help-tip" data-tip="${text}">?</span>`; }
+
+    /* --- STRING WRAPPING LOGIC (FIX) --- */
+    function formatLPC(fnName, text, indentLevel = 1) {
+        if (!text) return "";
+        const indent = "    ".repeat(indentLevel);
+        
+        // Split by whitespace but preserve meaningful word blocks
+        const words = text.replace(/[\r\n]+/g, ' ').trim().split(/\s+/);
+        let lines = [];
+        let currentLine = "";
+
+        words.forEach(word => {
+            // Check if adding the word exceeds limit (70 chars safe zone)
+            if (currentLine.length + word.length + 1 > 70) {
+                lines.push(currentLine); // Push line with trailing space
+                currentLine = word + " ";
+            } else {
+                currentLine += word + " ";
+            }
+        });
+        // Push the last partial line, trimming the trailing space for the very end
+        if (currentLine.trim().length > 0) lines.push(currentLine);
+
+        // Single line case
+        if (lines.length === 0) return `${indent}${fnName}("");`;
+        if (lines.length === 1) return `${indent}${fnName}("${lines[0].trim()}");`;
+
+        // Multi-line case
+        // We ensure spaces are kept inside the quotes for intermediate lines
+        const formattedLines = lines.map((line, i) => {
+            const isFirst = i === 0;
+            const isLast = i === lines.length - 1;
+            const content = isLast ? line.trim() : line; // Keep trailing space for non-last lines
+            const prefix = isFirst ? `"` : `${indent}  "`;
+            const suffix = isLast ? `");` : `"`;
+            return prefix + content + suffix;
+        }).join('\n');
+
+        return `${indent}${fnName}(${formattedLines}`;
     }
 
     /* --- STATE --- */
@@ -242,9 +272,7 @@
     let exportSettings = { areaName: "new_area", basePath: "/d/domain/new_area/", baseLevel: 5 };
     
     // Modal Context
-    let currentEditType = null;
-    let currentEditId = null; 
-    let currentEditLink = null; 
+    let currentEditType = null, currentEditId = null, currentEditLink = null; 
 
     /* --- DIGGING (GLOBAL SCOPE) --- */
     window.dig = function(dir) {
@@ -276,13 +304,7 @@
     }
 
     function createRoom(x, y, z, name) {
-        const r = { 
-            id: Date.now()+Math.random(), x, y, z, name, 
-            longDesc: "A generic room.", 
-            terrain: "indoor",
-            comments: "", 
-            details: [], monsters: [], objects: [] 
-        };
+        const r = { id: Date.now()+Math.random(), x, y, z, name, longDesc: "A generic room.", terrain: "indoor", comments: "", details: [], monsters: [], objects: [] };
         rooms.push(r);
         return r;
     }
@@ -293,17 +315,9 @@
         canvas.addEventListener('mousedown', onDown);
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', () => isPanning = false);
-        
-        // Initial Data
         activeRoom = createRoom(0, 0, 0, "The Start");
         createObjectDef("sword", "a rusty sword", "weapon", "blade");
-        
-        // Force rendering logic immediately
-        setTimeout(() => {
-            resize(); // Sets canvas size
-            syncUI(); // Populates inputs
-            draw();   // Draws map
-        }, 100);
+        setTimeout(() => { resize(); syncUI(); draw(); }, 100);
     }
     
     function syncUI() {
@@ -311,11 +325,10 @@
         document.getElementById('r-name').value = activeRoom.name;
         document.getElementById('r-long').value = activeRoom.longDesc;
         document.getElementById('r-terrain').value = activeRoom.terrain;
-        refreshLists();
-        draw();
+        refreshLists(); draw();
     }
 
-    /* --- UI UPDATES --- */
+    /* --- UI UPDATES & MODALS --- */
     function showTab(tabId) {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -326,7 +339,6 @@
 
     function refreshLists() {
         if(!activeRoom) return;
-
         // Exit List 
         const exitList = document.getElementById('exit-list');
         let myLinks = links.filter(l => l.from === activeRoom.id || l.to === activeRoom.id);
@@ -334,12 +346,8 @@
         
         const getDir = (r1, r2) => {
             if(r2.z > r1.z) return "Up"; if(r2.z < r1.z) return "Down";
-            if(r2.y < r1.y) {
-                if(r2.x < r1.x) return "NW"; if(r2.x > r1.x) return "NE"; return "North";
-            }
-            if(r2.y > r1.y) {
-                if(r2.x < r1.x) return "SW"; if(r2.x > r1.x) return "SE"; return "South";
-            }
+            if(r2.y < r1.y) { if(r2.x < r1.x) return "NW"; if(r2.x > r1.x) return "NE"; return "North"; }
+            if(r2.y > r1.y) { if(r2.x < r1.x) return "SW"; if(r2.x > r1.x) return "SE"; return "South"; }
             return r2.x > r1.x ? "East" : "West";
         };
 
@@ -349,27 +357,14 @@
             if(!other) return;
             let dir = getDir(activeRoom, other);
             let hasDoor = l.door && l.door.active;
-            let btnClass = hasDoor ? "btn-blue" : "btn-grey";
-            let btnText = hasDoor ? "Door (Edit)" : "Door (None)";
-            
-            html += `<div class="exit-row">
-                <span class="exit-dir">${dir}</span>
-                <span class="exit-dest">${other.name}</span>
-                <button class="btn-sm ${btnClass}" onclick="openDoorModal('${l.from}','${l.to}')">${btnText}</button>
-            </div>`;
+            html += `<div class="exit-row"><span class="exit-dir">${dir}</span><span class="exit-dest">${other.name}</span><button class="btn-sm ${hasDoor?"btn-blue":"btn-grey"}" onclick="openDoorModal('${l.from}','${l.to}')">${hasDoor?"Door (Edit)":"Door (None)"}</button></div>`;
         });
         if(html === "") html = "<div style='padding:10px; color:#666; font-size:0.8rem; text-align:center'>No exits. Use the compass to dig.</div>";
         exitList.innerHTML = html;
 
         // Detail List
         document.getElementById('detail-list').innerHTML = activeRoom.details.map((d,i) => 
-            `<div class="list-item" onclick="openDetailModal(${i})">
-                <div style="overflow:hidden; max-width:220px;">
-                   <span style="color:var(--accent); font-weight:bold; margin-right:5px; font-size:0.7rem;">[${d.type.toUpperCase()}]</span>
-                   <h4 style="display:inline">${d.keywords}</h4>
-                </div>
-                <button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.details.splice(${i},1);refreshLists()">X</button>
-            </div>`
+            `<div class="list-item" onclick="openDetailModal(${i})"><div style="overflow:hidden; max-width:220px;"><span style="color:var(--accent); font-weight:bold; margin-right:5px; font-size:0.7rem;">[${d.type.toUpperCase()}]</span><h4 style="display:inline">${d.keywords}</h4></div><button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.details.splice(${i},1);refreshLists()">X</button></div>`
         ).join('');
 
         // Standard Lists
@@ -377,304 +372,99 @@
             const o = objectLibrary.find(x=>x.id==oid);
             return o ? `<div class="list-item"><span>${o.short}</span><button class="btn-red btn-sm" onclick="activeRoom.objects.splice(${i},1);refreshLists()">X</button></div>` : '';
         }).join('');
-        
         document.getElementById('room-obj-select').innerHTML = objectLibrary.map(o => `<option value="${o.id}">${o.short}</option>`).join('');
-
-        document.getElementById('global-obj-list').innerHTML = objectLibrary.map((o,i) => 
-            `<div class="list-item" onclick="openObjectModal(${i})">
-                <div><h4>${o.idName}</h4><span>${o.type}</span></div>
-                <button class="btn-red btn-sm" onclick="event.stopPropagation(); objectLibrary.splice(${i},1); refreshLists();">X</button>
-            </div>`
-        ).join('');
-
-        document.getElementById('monster-list').innerHTML = activeRoom.monsters.map((m,i) => 
-            `<div class="list-item" onclick="openMonsterModal(${i})">
-                <div><h4>${m.short}</h4><span>Lvl Adj: ${m.levelAdj||0} ${m.race}</span></div>
-                <button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.monsters.splice(${i},1); refreshLists();">X</button>
-            </div>`
-        ).join('');
+        document.getElementById('global-obj-list').innerHTML = objectLibrary.map((o,i) => `<div class="list-item" onclick="openObjectModal(${i})"><div><h4>${o.idName}</h4><span>${o.type}</span></div><button class="btn-red btn-sm" onclick="event.stopPropagation(); objectLibrary.splice(${i},1); refreshLists();">X</button></div>`).join('');
+        document.getElementById('monster-list').innerHTML = activeRoom.monsters.map((m,i) => `<div class="list-item" onclick="openMonsterModal(${i})"><div><h4>${m.short}</h4><span>Lvl Adj: ${m.levelAdj||0} ${m.race}</span></div><button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.monsters.splice(${i},1); refreshLists();">X</button></div>`).join('');
     }
 
-    function syncRoom() {
-        activeRoom.name = document.getElementById('r-name').value;
-        activeRoom.longDesc = document.getElementById('r-long').value;
-        activeRoom.terrain = document.getElementById('r-terrain').value;
-        draw();
-    }
-
+    function syncRoom() { activeRoom.name = document.getElementById('r-name').value; activeRoom.longDesc = document.getElementById('r-long').value; activeRoom.terrain = document.getElementById('r-terrain').value; draw(); }
+    
     /* --- MODALS --- */
-    function openModal(title) {
-        document.getElementById('modal-overlay').style.display = 'flex';
-        document.getElementById('modal-title').innerText = title;
-    }
-    function closeModal() {
-        document.getElementById('modal-overlay').style.display = 'none';
-        refreshLists(); draw();
-    }
+    function openModal(title) { document.getElementById('modal-overlay').style.display = 'flex'; document.getElementById('modal-title').innerText = title; }
+    function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; refreshLists(); draw(); }
     function saveModal() { closeModal(); }
 
     function openCommentModal() {
-        currentEditType = 'comment';
-        openModal("Room Comments");
-        document.getElementById('modal-body').innerHTML = `
-            <p style="color:#888; font-size:0.8rem;">These comments will appear at the top of the generated LPC file.</p>
-            <textarea rows="10" placeholder="// Add developer notes here..." 
-            oninput="activeRoom.comments = this.value">${activeRoom.comments}</textarea>
-        `;
+        currentEditType = 'comment'; openModal("Room Comments");
+        document.getElementById('modal-body').innerHTML = `<p style="color:#888; font-size:0.8rem;">Comments for top of file.</p><textarea rows="10" oninput="activeRoom.comments = this.value">${activeRoom.comments}</textarea>`;
     }
 
     function openDoorModal(fromId, toId) {
         currentEditLink = links.find(l => (l.from == fromId && l.to == toId));
         if(!currentEditLink.door) currentEditLink.door = { active: false, id: "door", state: "closed", key: "" };
-        const d = currentEditLink.door;
-        openModal("Edit Door");
+        const d = currentEditLink.door; openModal("Edit Door");
         document.getElementById('modal-body').innerHTML = `
-            <label>Has Door?</label>
-            <select id="door-active" onchange="updateDoor('active', this.value === 'true')">
-                <option value="false" ${!d.active?'selected':''}>No</option>
-                <option value="true" ${d.active?'selected':''}>Yes</option>
-            </select>
-            <div id="door-opts" style="display:${d.active?'block':'none'}">
-                <label>Door ID (Name)</label><input type="text" value="${d.id}" oninput="updateDoor('id', this.value)">
-                <p style="color:#666; font-size:0.7rem;">* Spaces are allowed (e.g., "office door").</p>
-                <label>State</label><select onchange="updateDoor('state', this.value)">
-                    <option value="open" ${d.state==='open'?'selected':''}>Open</option>
-                    <option value="closed" ${d.state==='closed'?'selected':''}>Closed</option>
-                    <option value="locked" ${d.state==='locked'?'selected':''}>Locked</option>
-                </select>
-                <label>Key ID</label><input type="text" value="${d.key}" placeholder="e.g. iron_key" oninput="updateDoor('key', this.value)">
-                <p style="color:#666; font-size:0.7rem;">* If this key ID doesn't exist in your library, it will be auto-generated on export.</p>
-            </div>
-        `;
+            <label>Has Door?</label><select id="door-active" onchange="updateDoor('active', this.value === 'true')"><option value="false" ${!d.active?'selected':''}>No</option><option value="true" ${d.active?'selected':''}>Yes</option></select>
+            <div id="door-opts" style="display:${d.active?'block':'none'}"><label>Door ID</label><input type="text" value="${d.id}" oninput="updateDoor('id', this.value)"><label>State</label><select onchange="updateDoor('state', this.value)"><option value="open" ${d.state==='open'?'selected':''}>Open</option><option value="closed" ${d.state==='closed'?'selected':''}>Closed</option><option value="locked" ${d.state==='locked'?'selected':''}>Locked</option></select><label>Key ID</label><input type="text" value="${d.key}" oninput="updateDoor('key', this.value)"></div>`;
     }
-    function updateDoor(key, val) {
-        currentEditLink.door[key] = val;
-        if(key === 'active') document.getElementById('door-opts').style.display = val ? 'block' : 'none';
-    }
+    function updateDoor(key, val) { currentEditLink.door[key] = val; if(key === 'active') document.getElementById('door-opts').style.display = val ? 'block' : 'none'; }
 
     function openDetailModal(idx) {
-        currentEditType = 'detail';
-        currentEditId = idx;
-        if(idx === -1) {
-            activeRoom.details.push({ type: "look", keywords: "default", desc: "It reads: Beware." });
-            currentEditId = activeRoom.details.length - 1;
-        }
-        const d = activeRoom.details[currentEditId];
-        openModal("Edit Detail / Sense");
+        currentEditType = 'detail'; currentEditId = idx;
+        if(idx === -1) { activeRoom.details.push({ type: "look", keywords: "default", desc: "It reads: Beware." }); currentEditId = activeRoom.details.length - 1; }
+        const d = activeRoom.details[currentEditId]; openModal("Edit Detail / Sense");
         document.getElementById('modal-body').innerHTML = `
-            <label>Type</label>
-            <select onchange="activeRoom.details[currentEditId].type = this.value">
-                <option value="look" ${d.type==='look'?'selected':''}>Look (Item)</option>
-                <option value="listen" ${d.type==='listen'?'selected':''}>Listen (Sound)</option>
-                <option value="smell" ${d.type==='smell'?'selected':''}>Smell (Scent)</option>
-            </select>
-            <label>Keywords</label><input type="text" value="${d.keywords}" oninput="activeRoom.details[currentEditId].keywords = this.value">
-            <p style="color:#666; font-size:0.7rem;">* Use 'default' for room-wide smell/listen.</p>
-            <label>Description</label><textarea rows="6" oninput="activeRoom.details[currentEditId].desc = this.value">${d.desc}</textarea>
-        `;
+            <label>Type</label><select onchange="activeRoom.details[currentEditId].type = this.value"><option value="look" ${d.type==='look'?'selected':''}>Look (Item)</option><option value="listen" ${d.type==='listen'?'selected':''}>Listen (Sound)</option><option value="smell" ${d.type==='smell'?'selected':''}>Smell (Scent)</option></select>
+            <label>Keywords</label><input type="text" value="${d.keywords}" oninput="activeRoom.details[currentEditId].keywords = this.value"><label>Description</label><textarea rows="6" oninput="activeRoom.details[currentEditId].desc = this.value">${d.desc}</textarea>`;
     }
 
-    /* --- MONSTER WITH SLIDER --- */
     function openMonsterModal(idx) {
-        currentEditType = 'monster';
-        currentEditId = idx;
-        if(idx === -1) {
-            activeRoom.monsters.push({
-                id: Date.now(), idName: "guard", short: "a guard", long: "A guard.",
-                race: "Human", class: "Fighter", levelAdj: 0, gender: "neuter", alignment: 0, inventory: []
-            });
-            currentEditId = activeRoom.monsters.length - 1;
-        }
-        const m = activeRoom.monsters[currentEditId];
-        if(m.levelAdj === undefined) m.levelAdj = 0; // Migrate old data
-
+        currentEditType = 'monster'; currentEditId = idx;
+        if(idx === -1) { activeRoom.monsters.push({ id: Date.now(), idName: "guard", short: "a guard", long: "A guard.", race: "Human", class: "Fighter", levelAdj: 0, gender: "neuter", alignment: 0, inventory: [] }); currentEditId = activeRoom.monsters.length - 1; }
+        const m = activeRoom.monsters[currentEditId]; if(m.levelAdj === undefined) m.levelAdj = 0;
         openModal("Edit Monster");
-        
         const invOpts = objectLibrary.map(o => `<option value="${o.id}">${o.short}</option>`).join('');
-        let invList = m.inventory.map((oid, i) => {
-            const o = objectLibrary.find(x=>x.id==oid);
-            return o ? `<span style="background:#333; padding:2px 6px; border-radius:3px; margin-right:5px; font-size:0.8rem; border:1px solid #555;">${o.short} <span style="color:#c0392b; cursor:pointer;" onclick="removeMonInv(${i})">x</span></span>` : '';
-        }).join('');
-
+        let invList = m.inventory.map((oid, i) => { const o = objectLibrary.find(x=>x.id==oid); return o ? `<span style="background:#333; padding:2px 6px; border-radius:3px; margin-right:5px; font-size:0.8rem; border:1px solid #555;">${o.short} <span style="color:#c0392b; cursor:pointer;" onclick="removeMonInv(${i})">x</span></span>` : ''; }).join('');
         const alignLabel = getAlignLabel(m.alignment);
-        
-        // Tooltip texts
-        const idTip = "Comma-separated list. First is the primary ID (set_name). The rest are aliases (set_id). E.g: 'orc chief, chief, orc'. Spaces are preserved.";
-        const shortTip = "What the player sees in a room. E.g: 'a large orc'.";
-        const longTip = "What the player sees when looking at it.";
-        const lvlTip = "Adjust level relative to BASE_LEVEL (e.g. +2 or -1).";
-
         document.getElementById('modal-body').innerHTML = `
-            <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>ID Name ${makeTip(idTip)}</label><input type="text" value="${m.idName}" oninput="updateMon('idName', this.value)"></div>
-                <div style="flex:1"><label>Short Desc ${makeTip(shortTip)}</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div>
-            </div>
-            <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>Lvl Adj ${makeTip(lvlTip)}</label><input type="number" value="${m.levelAdj}" oninput="updateMon('levelAdj', this.value)"></div>
-                <div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Arachnid','Artrell','Aurin','Basilisk','Bat','Bee','Beetle','Beholder','Bird','Carrion-crawler','Centaur','Centipede','Chimera','Cockatrice','Crocodile','Crustacean','Dagon','Drider','Drow','Dwarf','Elf','Equine','Equine-winged','Faerie','Fish','Frog','Giant','Gnome','Half-Elf','Halfling','Half-Orc','Human','Humanoid-tail','Insectoid','nsectoid-winged','Lizardman','Merperson','Null','Nymph','Octopus','Otyugh','Quadruped','Quadruped-winged','Ray','Reptile','Reptile-winged','Satyr','Slime','Snakeman','Snae-winged','Turtle','Worm'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div>
-                <div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${['None','Fighter','Warmage','Cleric','Rogue','Druid','Monk','Ranger'].map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div>
-            </div>
-            
-            <div class="align-container" style="margin-top:10px;">
-                <label>Alignment</label>
-                <span id="align-lbl" class="align-val">${alignLabel} (${m.alignment})</span>
-                <input type="range" min="-1250" max="1250" step="50" value="${m.alignment}" oninput="updateAlignUI(this.value)">
-            </div>
-            
-            <label>Inventory</label>
-            <div style="display:flex; gap:5px;"><select id="mon-inv-sel">${invOpts}</select><button class="dir-btn" onclick="addMonInv()">+</button></div>
-            <div style="margin-bottom:10px;">${invList}</div>
-            
-            <label>Long Description ${makeTip(longTip)}</label>
-            <textarea rows="3" oninput="updateMon('long', this.value)">${m.long}</textarea>
-        `;
+            <div style="display:flex; gap:10px;"><div style="flex:1"><label>ID Name</label><input type="text" value="${m.idName}" oninput="updateMon('idName', this.value)"></div><div style="flex:1"><label>Short Desc</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div></div>
+            <div style="display:flex; gap:10px;"><div style="flex:1"><label>Lvl Adj</label><input type="number" value="${m.levelAdj}" oninput="updateMon('levelAdj', this.value)"></div><div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Arachnid','Artrell','Aurin','Basilisk','Bat','Bee','Beetle','Beholder','Bird','Carrion-crawler','Centaur','Centipede','Chimera','Cockatrice','Crocodile','Crustacean','Dagon','Drider','Drow','Dwarf','Elf','Equine','Equine-winged','Faerie','Fish','Frog','Giant','Gnome','Half-Elf','Halfling','Half-Orc','Human','Humanoid-tail','Insectoid','nsectoid-winged','Lizardman','Merperson','Null','Nymph','Octopus','Otyugh','Quadruped','Quadruped-winged','Ray','Reptile','Reptile-winged','Satyr','Slime','Snakeman','Snae-winged','Turtle','Worm'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div><div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${['None','Fighter','Warmage','Cleric','Rogue','Druid','Monk','Ranger'].map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div></div>
+            <div class="align-container" style="margin-top:10px;"><label>Alignment</label><span id="align-lbl" class="align-val">${alignLabel} (${m.alignment})</span><input type="range" min="-1250" max="1250" step="50" value="${m.alignment}" oninput="updateAlignUI(this.value)"></div>
+            <label>Inventory</label><div style="display:flex; gap:5px;"><select id="mon-inv-sel">${invOpts}</select><button class="dir-btn" onclick="addMonInv()">+</button></div><div style="margin-bottom:10px;">${invList}</div><label>Long Description</label><textarea rows="3" oninput="updateMon('long', this.value)">${m.long}</textarea>`;
     }
     
-    function updateAlignUI(val) {
-        val = parseInt(val);
-        activeRoom.monsters[currentEditId].alignment = val;
-        const text = getAlignLabel(val);
-        document.getElementById('align-lbl').innerText = `${text} (${val})`;
-    }
-
+    function updateAlignUI(val) { val = parseInt(val); activeRoom.monsters[currentEditId].alignment = val; document.getElementById('align-lbl').innerText = `${getAlignLabel(val)} (${val})`; }
     function updateMon(k,v) { activeRoom.monsters[currentEditId][k]=v; }
     function addMonInv() { const v=document.getElementById('mon-inv-sel').value; if(v){ activeRoom.monsters[currentEditId].inventory.push(v); openMonsterModal(currentEditId); } }
     function removeMonInv(i) { activeRoom.monsters[currentEditId].inventory.splice(i,1); openMonsterModal(currentEditId); }
 
-    /* --- OBJECT MODAL --- */
     function openObjectModal(idx) {
-        currentEditType = 'object';
-        currentEditId = idx;
-        if(idx === -1) {
-            createObjectDef("item", "a new item", "simple", "");
-            currentEditId = objectLibrary.length - 1;
-        }
-        const obj = objectLibrary[currentEditId];
-        if(obj.levelAdj === undefined) obj.levelAdj = 0; // Migrate
-        if(obj.keyId === undefined) obj.keyId = ""; // Migrate
-
+        currentEditType = 'object'; currentEditId = idx;
+        if(idx === -1) { createObjectDef("item", "a new item", "simple", ""); currentEditId = objectLibrary.length - 1; }
+        const obj = objectLibrary[currentEditId]; if(obj.levelAdj === undefined) obj.levelAdj = 0; if(obj.keyId === undefined) obj.keyId = "";
         openModal("Edit Object");
-        
-        // Subtype (Type selection)
         let typeSelect = `<input disabled style="background:#222; border:none;" placeholder="N/A">`;
-        if(obj.type === 'weapon') {
-            typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_WEAPON_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
-        } else if(obj.type === 'armour') {
-            typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_ARMOUR_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
-        }
-
-        // Material (Only for Armour)
-        let matSelect = "";
-        if(obj.type === 'armour') {
-             matSelect = `<div style="flex:1"><label>Material (Subtype)</label>
-             <select onchange="updateObj('material', this.value)">${VALID_MATERIALS.map(t=>`<option ${obj.material===t?'selected':''}>${t}</option>`)}</select></div>`;
-        }
-
-        // Key Specific UI
-        let keyUI = "";
-        if(obj.type === 'key') {
-            // Find all unique keys currently assigned to doors in the world
-            let existingKeys = new Set();
-            links.forEach(l => { if(l.door && l.door.active && l.door.key) existingKeys.add(l.door.key); });
-            let keyOpts = Array.from(existingKeys).map(k => `<option value="${k}">`).join('');
-
-            keyUI = `
-            <div style="background:#222; padding:10px; border:1px solid #444; margin-bottom:10px; border-radius:4px;">
-                <label style="color:var(--accent)">Lock Match ID (set_key_id)</label>
-                <div style="display:flex; gap:5px;">
-                    <input type="text" list="door-keys-list" value="${obj.keyId}" placeholder="e.g. iron_key" oninput="updateObj('keyId', this.value)">
-                    <datalist id="door-keys-list">${keyOpts}</datalist>
-                </div>
-                <p style="color:#888; font-size:0.7rem;">* This code must match the "Key ID" set on a Door.</p>
-            </div>`;
-        }
-
-        // Tooltip texts
-        const idTip = "Comma-separated list. First is the primary ID (set_name). The rest are aliases (set_id). E.g: 'yorik's hat, hat, old hat'. Spaces are preserved.";
-        const shortTip = "What the player sees in a room. E.g: 'a rusty sword'.";
-        const longTip = "What the player sees when looking at it.";
-        const lvlTip = "Adjust level relative to BASE_LEVEL (e.g. +2 or -1).";
-
+        if(obj.type === 'weapon') typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_WEAPON_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
+        else if(obj.type === 'armour') typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_ARMOUR_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
+        let matSelect = (obj.type === 'armour') ? `<div style="flex:1"><label>Material</label><select onchange="updateObj('material', this.value)">${VALID_MATERIALS.map(t=>`<option ${obj.material===t?'selected':''}>${t}</option>`)}</select></div>` : "";
+        let keyUI = (obj.type === 'key') ? `<div style="background:#222; padding:10px; border:1px solid #444; margin-bottom:10px;"><label>Lock Match ID</label><input type="text" value="${obj.keyId}" oninput="updateObj('keyId', this.value)"></div>` : "";
         document.getElementById('modal-body').innerHTML = `
-            <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>ID ${makeTip(idTip)}</label><input type="text" value="${obj.idName}" oninput="updateObj('idName', this.value)"></div>
-                <div style="flex:1"><label>Short ${makeTip(shortTip)}</label><input type="text" value="${obj.short}" oninput="updateObj('short', this.value)"></div>
-            </div>
-            ${keyUI}
-            <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>Category</label><select onchange="updateObj('type', this.value); openObjectModal(currentEditId)">
-                    <option value="simple" ${obj.type==='simple'?'selected':''}>Simple</option>
-                    <option value="key" ${obj.type==='key'?'selected':''}>Key</option>
-                    <option value="weapon" ${obj.type==='weapon'?'selected':''}>Weapon</option>
-                    <option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option>
-                </select></div>
-                <div style="flex:1"><label>Type</label>${typeSelect}</div>
-                ${matSelect}
-            </div>
-            <div style="display:flex; gap:10px;">
-                <div style="flex:1"><label>Lvl Adj ${makeTip(lvlTip)}</label><input type="number" value="${obj.levelAdj}" oninput="updateObj('levelAdj', this.value)"></div>
-            </div>
-            <label>Long Desc ${makeTip(longTip)}</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>
-        `;
+            <div style="display:flex; gap:10px;"><div style="flex:1"><label>ID</label><input type="text" value="${obj.idName}" oninput="updateObj('idName', this.value)"></div><div style="flex:1"><label>Short</label><input type="text" value="${obj.short}" oninput="updateObj('short', this.value)"></div></div>
+            ${keyUI}<div style="display:flex; gap:10px;"><div style="flex:1"><label>Category</label><select onchange="updateObj('type', this.value); openObjectModal(currentEditId)"><option value="simple" ${obj.type==='simple'?'selected':''}>Simple</option><option value="key" ${obj.type==='key'?'selected':''}>Key</option><option value="weapon" ${obj.type==='weapon'?'selected':''}>Weapon</option><option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option></select></div><div style="flex:1"><label>Type</label>${typeSelect}</div>${matSelect}</div>
+            <div style="display:flex; gap:10px;"><div style="flex:1"><label>Lvl Adj</label><input type="number" value="${obj.levelAdj}" oninput="updateObj('levelAdj', this.value)"></div></div><label>Long Desc</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>`;
     }
     
-    function createObjectDef(idName, short, type, subtype) { 
-        objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype, material: "plate", levelAdj: 0, keyId: "" }); 
-    }
-    
-    function updateObj(k,v) { 
-        objectLibrary[currentEditId][k] = v; 
-        if(k==='type') {
-            // Reset subtype/material defaults when switching main category
-            if(v==='weapon') objectLibrary[currentEditId].subtype="blade";
-            if(v==='armour') { objectLibrary[currentEditId].subtype="helmet"; objectLibrary[currentEditId].material="plate"; }
-            else objectLibrary[currentEditId].subtype="";
-        } 
-    }
-    
+    function createObjectDef(idName, short, type, subtype) { objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype, material: "plate", levelAdj: 0, keyId: "" }); }
+    function updateObj(k,v) { objectLibrary[currentEditId][k] = v; if(k==='type') { if(v==='weapon') objectLibrary[currentEditId].subtype="blade"; if(v==='armour') { objectLibrary[currentEditId].subtype="helmet"; objectLibrary[currentEditId].material="plate"; } else objectLibrary[currentEditId].subtype=""; } }
     function addObjToRoom() { const v=document.getElementById('room-obj-select').value; if(v){activeRoom.objects.push(v); refreshLists(); draw();} }
 
     /* --- MAP DRAWING --- */
     function draw() {
         if (!activeRoom || !canvas.width) return;
-        ctx.save();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.translate(canvas.width/2 + camera.x, canvas.height/2 + camera.y);
-
+        ctx.save(); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.translate(canvas.width/2 + camera.x, canvas.height/2 + camera.y);
         links.forEach(l => {
-            const r1 = rooms.find(r => r.id === l.from);
-            const r2 = rooms.find(r => r.id === l.to);
+            const r1 = rooms.find(r => r.id === l.from), r2 = rooms.find(r => r.id === l.to);
             if(!r1 || !r2 || r1.z !== currentZ || r2.z !== currentZ) return;
-            
-            ctx.beginPath(); ctx.strokeStyle = '#444'; ctx.lineWidth = 2;
-            ctx.moveTo(r1.x + 17, r1.y + 17); ctx.lineTo(r2.x + 17, r2.y + 17); ctx.stroke();
-            
-            if(l.door && l.door.active) {
-                const mx = (r1.x + r2.x)/2 + 17;
-                const my = (r1.y + r2.y)/2 + 17;
-                ctx.fillStyle = '#c0392b'; ctx.fillRect(mx-4, my-4, 8, 8);
-            }
+            ctx.beginPath(); ctx.strokeStyle = '#444'; ctx.lineWidth = 2; ctx.moveTo(r1.x + 17, r1.y + 17); ctx.lineTo(r2.x + 17, r2.y + 17); ctx.stroke();
+            if(l.door && l.door.active) { const mx = (r1.x + r2.x)/2 + 17, my = (r1.y + r2.y)/2 + 17; ctx.fillStyle = '#c0392b'; ctx.fillRect(mx-4, my-4, 8, 8); }
         });
-
         rooms.forEach(r => {
             if(r.z !== currentZ) return;
-            ctx.fillStyle = (r === activeRoom) ? '#e67e22' : '#2c3e50';
-            ctx.fillRect(r.x, r.y, 35, 35);
-            ctx.strokeStyle = (r === activeRoom) ? '#fff' : '#555';
-            ctx.strokeRect(r.x, r.y, 35, 35);
-            
-            let hasUp=false, hasDown=false;
-            links.forEach(l => {
-                let otherId = (l.from===r.id)?l.to:(l.to===r.id?l.from:null);
-                if(otherId) {
-                    let o = rooms.find(x=>x.id===otherId);
-                    if(o && o.z>r.z) hasUp=true;
-                    if(o && o.z<r.z) hasDown=true;
-                }
-            });
+            ctx.fillStyle = (r === activeRoom) ? '#e67e22' : '#2c3e50'; ctx.fillRect(r.x, r.y, 35, 35);
+            ctx.strokeStyle = (r === activeRoom) ? '#fff' : '#555'; ctx.strokeRect(r.x, r.y, 35, 35);
+            let hasUp=false, hasDown=false; links.forEach(l => { let otherId = (l.from===r.id)?l.to:(l.to===r.id?l.from:null); if(otherId) { let o = rooms.find(x=>x.id===otherId); if(o && o.z>r.z) hasUp=true; if(o && o.z<r.z) hasDown=true; } });
             if(hasUp) { ctx.fillStyle="#fff"; ctx.beginPath(); ctx.moveTo(r.x+25,r.y+5); ctx.lineTo(r.x+30,r.y+12); ctx.lineTo(r.x+20,r.y+12); ctx.fill(); }
             if(hasDown){ ctx.fillStyle="#fff"; ctx.beginPath(); ctx.moveTo(r.x+25,r.y+30); ctx.lineTo(r.x+30,r.y+23); ctx.lineTo(r.x+20,r.y+23); ctx.fill(); }
-
             if(r.monsters.length) { ctx.fillStyle="#8e44ad"; ctx.beginPath(); ctx.arc(r.x+35,r.y,5,0,6.28); ctx.fill(); }
             if(r.objects.length) { ctx.fillStyle="#27ae60"; ctx.beginPath(); ctx.arc(r.x+35,r.y+35,5,0,6.28); ctx.fill(); }
             if(r.details.length) { ctx.fillStyle="#3498db"; ctx.beginPath(); ctx.arc(r.x,r.y+35,5,0,6.28); ctx.fill(); }
@@ -682,32 +472,119 @@
         ctx.restore();
     }
     
-    /* --- EVENTS --- */
-    function onDown(e) {
-        const r = canvas.getBoundingClientRect();
-        const mx = e.clientX - r.left - (canvas.width/2 + camera.x);
-        const my = e.clientY - r.top - (canvas.height/2 + camera.y);
-        const clicked = rooms.find(rm => mx>rm.x && mx<rm.x+35 && my>rm.y && my<rm.y+35 && rm.z==currentZ);
-        if(clicked) { 
-            activeRoom = clicked; 
-            syncUI();
-        } else { isPanning = true; lastMouse = {x:e.clientX, y:e.clientY}; }
-    }
+    function onDown(e) { const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left - (canvas.width/2 + camera.x), my = e.clientY - r.top - (canvas.height/2 + camera.y); const clicked = rooms.find(rm => mx>rm.x && mx<rm.x+35 && my>rm.y && my<rm.y+35 && rm.z==currentZ); if(clicked) { activeRoom = clicked; syncUI(); } else { isPanning = true; lastMouse = {x:e.clientX, y:e.clientY}; } }
     function onMove(e) { if(isPanning) { camera.x += e.clientX - lastMouse.x; camera.y += e.clientY - lastMouse.y; lastMouse = {x:e.clientX, y:e.clientY}; draw(); } }
     function resize() { canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight; draw(); }
 
-    /* --- EXPORT --- */
+    /* --- EXPORT GENERATION --- */
     function makeSafe(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || "unk"; }
-    function formatLong(fn, txt) {
-        const lines = txt.match(/.{1,70}(\s|$)/g) || [""];
-        if(lines.length === 1) return `    ${fn}("${lines[0].trim()}");`;
-        return `    ${fn}("${lines[0].trim()}"\n` + lines.slice(1).map(l=>`      "${l.trim()}"`).join('\n') + ');';
-    }
-    
-    function getLevelStr(adj) {
-        adj = parseInt(adj) || 0;
-        if(adj === 0) return "BASE_LEVEL";
-        return adj > 0 ? `BASE_LEVEL+${adj}` : `BASE_LEVEL${adj}`;
+    function getLevelStr(adj) { adj = parseInt(adj) || 0; if(adj === 0) return "BASE_LEVEL"; return adj > 0 ? `BASE_LEVEL+${adj}` : `BASE_LEVEL${adj}`; }
+
+    // --- ASCII MAP GENERATOR ---
+    function generateASCIIMap(roomMap) {
+        // Collect all Z levels
+        const zLevels = [...new Set(rooms.map(r => r.z))].sort((a,b) => b - a); // Top down
+        let output = "";
+        const symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789abcdefghijklmnopqrstuvwxyz";
+
+        zLevels.forEach(z => {
+            output += `\n=== LEVEL ${z} ===\n\n`;
+            
+            // Filter rooms on this level
+            const floorRooms = rooms.filter(r => r.z === z);
+            if(floorRooms.length === 0) return;
+
+            // Normalize Coordinates
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            floorRooms.forEach(r => {
+                if(r.x < minX) minX = r.x; if(r.y < minY) minY = r.y;
+                if(r.x > maxX) maxX = r.x; if(r.y > maxY) maxY = r.y;
+            });
+
+            // Grid Logic: Rooms are 60 units apart.
+            // X Step: 6 chars (3 for room [X], 3 for link ---)
+            // Y Step: 3 lines (1 for room, 2 for vertical links/diagonals)
+            const xOffset = Math.abs(minX);
+            const yOffset = Math.abs(minY);
+            
+            // Calculate grid dimensions
+            const gridW = Math.ceil((maxX - minX) / 60) + 1;
+            const gridH = Math.ceil((maxY - minY) / 60) + 1;
+            
+            const charW = gridW * 6 + 1;
+            const charH = gridH * 3 + 1;
+
+            // Init Buffer
+            let buffer = Array(charH).fill(null).map(() => Array(charW).fill(' '));
+
+            // Place Rooms and Links
+            floorRooms.forEach(r => {
+                // Map to integer grid
+                const gx = (r.x - minX) / 60;
+                const gy = (r.y - minY) / 60;
+                
+                // Map to Text Buffer
+                const tx = gx * 6;
+                const ty = gy * 3;
+
+                // Assign Symbol
+                const roomName = makeSafe(r.name);
+                let symbol = "*";
+                // Simple hash for symbol consistency if < 60 rooms, else *
+                const idx = floorRooms.indexOf(r);
+                if(idx < symbols.length) symbol = symbols[idx];
+
+                // Draw Room: [A]
+                if(r.x === 0 && r.y === 0 && r.z === 0) {
+                    buffer[ty][tx] = '['; buffer[ty][tx+1] = '+'; buffer[ty][tx+2] = ']'; // Start Room
+                } else {
+                    buffer[ty][tx] = '['; buffer[ty][tx+1] = symbol; buffer[ty][tx+2] = ']';
+                }
+
+                // Draw Exits
+                links.forEach(l => {
+                    let other = null;
+                    if(l.from === r.id) other = rooms.find(x => x.id === l.to);
+                    else if(l.to === r.id) other = rooms.find(x => x.id === l.from);
+                    
+                    if(other && other.z === z) {
+                        // Determine relative position
+                        const dx = (other.x - r.x) / 60;
+                        const dy = (other.y - r.y) / 60;
+
+                        if(dx === 1 && dy === 0) { // East
+                            buffer[ty][tx+3] = '-'; buffer[ty][tx+4] = '-'; buffer[ty][tx+5] = '-';
+                        }
+                        else if(dx === 0 && dy === 1) { // South
+                             buffer[ty+1][tx+1] = '|'; buffer[ty+2][tx+1] = '|';
+                        }
+                        else if(dx === 1 && dy === 1) { // SE
+                             buffer[ty+1][tx+4] = '\\'; 
+                        }
+                        else if(dx === -1 && dy === 1) { // SW
+                             buffer[ty+1][tx-2] = '/';
+                        }
+                    }
+                });
+            });
+
+            // Flatten buffer to string
+            output += buffer.map(row => row.join('')).join('\n') + "\n\n";
+
+            // Legend
+            output += "Legend:\n";
+            if(floorRooms.some(r => r.x==0 && r.y==0 && r.z==0)) output += "  [+] Start Room (0,0,0)\n";
+            floorRooms.forEach((r, i) => {
+                let sym = (i < symbols.length) ? symbols[i] : "*";
+                if(!(r.x===0 && r.y===0 && r.z===0)) {
+                    const fname = roomMap[r.id];
+                    output += `  [${sym}] ${r.name} (${fname})\n`;
+                }
+            });
+            output += "--------------------------------------\n";
+        });
+
+        return output;
     }
 
     async function exportLPC() {
@@ -719,44 +596,32 @@
         const f = zip.folder(area);
         f.folder("include").file("include.h", `#include <std.h>\n#define MY_PATH "${path}"\n#define ROOMDIR MY_PATH+"rooms/"\n#define MONDIR MY_PATH+"mon/"\n#define OBJDIR MY_PATH+"obj/"\n#define BASE_LEVEL ${blvl}`);
         
-        // Export User Objects
         const objMap = {};
         objectLibrary.forEach(o => {
             const parts = o.idName.split(',').map(s => s.trim());
-            const primeId = parts[0].toLowerCase(); // First ID for set_name, spaces preserved
-            const allIds = parts.map(s => `"${s.toLowerCase()}"`); // All IDs quoted, spaces preserved
-            
-            // Filename based on first ID only (underscores)
+            const primeId = parts[0].toLowerCase();
+            const allIds = parts.map(s => `"${s.toLowerCase()}"`);
             const fname = makeSafe(parts[0]) + ".c";
-            
             objMap[o.id] = fname;
+            allIds.push(`"${o.type}"`);
             let xtra = "";
             if(o.type==='key') xtra=`    set_key_id("${o.keyId || primeId}");`;
             if(o.type==='weapon') xtra=`    set_type("${o.subtype}");`;
-            if(o.type==='armour') {
-                xtra=`    set_type("${o.subtype}");\n    set_subtype("${o.material}");`;
+            if(o.type==='armour') { 
+                xtra = `    set_type("${o.subtype}");`;
+                // Only add set_subtype (material) if the item is NOT a cloak
+                if(o.subtype !== 'cloak') {
+                    xtra += `\n    set_subtype("${o.material}");`;
+                }
             }
-            
-            // Push type to ID array
-            allIds.push(`"${o.type}"`);
 
-            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n    set_short("${o.short}");\n    set_long("${o.long}");\n    set_level(${getLevelStr(o.levelAdj)});\n${xtra}\n}`);
+            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", o.short)}\n${formatLPC("set_long", o.long)}\n    set_level(${getLevelStr(o.levelAdj)});\n${xtra}\n}`);
         });
 
-        // AUTO-GEN KEYS (From Door Definitions not found in lib)
+        // Auto Keys
         const autoKeys = new Set();
-        links.forEach(l => {
-            if(l.door && l.door.active && l.door.key) {
-                // Check if a user defined object has this keyId
-                const exists = objectLibrary.some(o => o.keyId === l.door.key);
-                if(!exists) autoKeys.add(l.door.key);
-            }
-        });
-
-        autoKeys.forEach(k => {
-            const fname = makeSafe(k) + ".c";
-            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit KEY;\nvoid create() {\n    ::create();\n    set_name("${k}");\n    set_id(({"${k}", "key"}));\n    set_key_id("${k}");\n    set_short("a ${k}");\n    set_long("It is a ${k}, used to unlock something.");\n    set_level(1);\n}`);
-        });
+        links.forEach(l => { if(l.door && l.door.active && l.door.key) { if(!objectLibrary.some(o => o.keyId === l.door.key)) autoKeys.add(l.door.key); } });
+        autoKeys.forEach(k => { f.folder("obj").file(makeSafe(k)+".c", `#include "../include/include.h"\ninherit KEY;\nvoid create() {\n    ::create();\n    set_name("${k}");\n    set_id(({"${k}", "key"}));\n    set_key_id("${k}");\n    set_short("a ${k}");\n    set_long("It is a ${k}, used to unlock something.");\n    set_level(1);\n}`); });
 
         // Monsters
         const monMap = {};
@@ -764,26 +629,15 @@
             const parts = m.idName.split(',').map(s => s.trim());
             const primeId = parts[0].toLowerCase();
             const allIds = parts.map(s => `"${s.toLowerCase()}"`);
-            
-            // Add race to IDs
             allIds.push(`"${m.race.toLowerCase()}"`);
-            
-            // Unique key for map based on first part of ID + race
             const key = parts[0] + m.race;
-            
             if(!monMap[key]) {
                 const fname = makeSafe(parts[0]) + ".c";
                 monMap[key] = fname;
-                let gear = "";
-                m.inventory.forEach(id => { if(objMap[id]) gear += `    add_object(OBJDIR+"${objMap[id]}");\n`; });
+                let gear = ""; m.inventory.forEach(id => { if(objMap[id]) gear += `    add_object(OBJDIR+"${objMap[id]}");\n`; });
                 if(gear) gear += `    command("wear all");\n    command("wield all");`;
-                
-                let clsCode = "";
-                if(m.class && m.class.toLowerCase() !== "none") {
-                    clsCode = `    set_class("${m.class.toLowerCase()}");\n`;
-                }
-
-                f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n    set_short("${m.short}");\n    set_long("${m.long}");\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${gear}\n}`);
+                let clsCode = (m.class && m.class.toLowerCase() !== "none") ? `    set_class("${m.class.toLowerCase()}");\n` : "";
+                f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", m.short)}\n${formatLPC("set_long", m.long)}\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${gear}\n}`);
             }
         }));
 
@@ -795,8 +649,7 @@
             let ex = [], doors = [], mons = [], objs = [], looks = [], listens = [], smells = [];
             links.forEach(l => {
                 let tr = null;
-                if(l.from==r.id) tr=rooms.find(x=>x.id==l.to);
-                else if(l.to==r.id) tr=rooms.find(x=>x.id==l.from);
+                if(l.from==r.id) tr=rooms.find(x=>x.id==l.to); else if(l.to==r.id) tr=rooms.find(x=>x.id==l.from);
                 if(tr) {
                     let d="unknown";
                     if(tr.z>r.z)d="up"; else if(tr.z<r.z)d="down";
@@ -805,86 +658,59 @@
                     else { if(tr.x>r.x)d="east"; else if(tr.x<r.x)d="west"; }
                     ex.push(`        "${d}" : ROOMDIR+"${rMap[tr.id].replace('.c','')}"`);
                     if(l.door && l.door.active) {
-                        // DOOR ID: Ensure spaces are preserved (l.door.id is not makeSafe'd here)
                         let k = l.door.key ? `"${l.door.key}"` : "0";
-                        let istate = "0";
-                        if(l.door.state === 'open') istate = "ISTATE_OPEN";
-                        else if(l.door.state === 'locked') istate = "ISTATE_LOCKED";
-                        
-                        if (istate !== "0") {
-                             doors.push(`    set_door("${l.door.id}", "${d}", ${k}, 0, 0, ${istate});`);
-                        } else {
-                             if(l.door.key) doors.push(`    set_door("${l.door.id}", "${d}", ${k});`);
-                             else doors.push(`    set_door("${l.door.id}", "${d}");`);
-                        }
+                        let istate = (l.door.state === 'open') ? "ISTATE_OPEN" : (l.door.state === 'locked' ? "ISTATE_LOCKED" : "0");
+                        doors.push(`    set_door("${l.door.id}", "${d}", ${k}${istate!=='0'?', 0, 0, '+istate:''});`);
                     }
                 }
             });
             r.details.forEach(det => {
-                if(det.type === 'look') {
-                    looks.push(`        ({${det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',')}}) : "${det.desc}"`);
-                }
-                else if(det.type === 'listen') {
-                    let keys = det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',');
-                    listens.push(`    set_listen(({${keys}}), "${det.desc}");`);
-                }
-                else if(det.type === 'smell') {
-                    let keys = det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',');
-                    smells.push(`    set_smell(({${keys}}), "${det.desc}");`);
-                }
+                let keys = det.keywords.split(',').map(k=>`"${k.trim()}"`).join(',');
+                if(det.type === 'look') looks.push(`        ({${keys}}) : "${det.desc}"`);
+                else if(det.type === 'listen') listens.push(`    set_listen(({${keys}}), "${det.desc}");`);
+                else if(det.type === 'smell') smells.push(`    set_smell(({${keys}}), "${det.desc}");`);
             });
-            r.monsters.forEach(m => {
-                 // Use first part of ID + race for lookup
-                 const parts = m.idName.split(',').map(s => s.trim());
-                 mons.push(`    add_object(MONDIR+"${monMap[parts[0]+m.race]}", "", RT_TRACK);`);
-            });
+            r.monsters.forEach(m => { const parts = m.idName.split(',').map(s => s.trim()); mons.push(`    add_object(MONDIR+"${monMap[parts[0]+m.race]}", "", RT_TRACK);`); });
             r.objects.forEach(id => { if(objMap[id]) objs.push(`    add_object(OBJDIR+"${objMap[id]}", "", RT_TRACK);`); });
 
             let exCode = ex.length ? `    set_exits(([\n${ex.join(',\n')}\n    ]));` : "";
             let lookCode = looks.length ? `    set_items(([\n${looks.join(',\n')}\n    ]));` : "";
-            
-            let listenCode = listens.length ? listens.join('\n') : "";
-            let smellCode = smells.length ? smells.join('\n') : "";
-            
+            let terrainCode = (r.terrain && r.terrain !== "indoor") ? `    set_terrain("${r.terrain}");\n` : "";
             let commentBlock = r.comments ? r.comments.split('\n').map(l=>`// ${l}`).join('\n') + "\n" : "";
 
-            let terrainCode = "";
-            if (r.terrain && r.terrain !== "indoor") {
-                terrainCode = `    set_terrain("${r.terrain}");\n`;
-            }
-
-            f.folder("rooms").file(rMap[r.id], `${commentBlock}#include "../include/include.h"\ninherit ROOM;\nvoid create() {\n    ::create();\n${formatLong("set_short",r.name)}\n${formatLong("set_long",r.longDesc)}\n${terrainCode}${lookCode}\n${listenCode}\n${smellCode}\n${exCode}\n${doors.join('\n')}\n${mons.join('\n')}\n${objs.join('\n')}\n}`);
+            f.folder("rooms").file(rMap[r.id], `${commentBlock}#include "../include/include.h"\ninherit ROOM;\nvoid create() {\n    ::create();\n${formatLPC("set_short", r.name)}\n${formatLPC("set_long", r.longDesc)}\n${terrainCode}${lookCode}\n${listens.join('\n')}\n${smells.join('\n')}\n${exCode}\n${doors.join('\n')}\n${mons.join('\n')}\n${objs.join('\n')}\n}`);
         });
+
+        // Docs
+        f.folder("docs").file("map.txt", generateASCIIMap(rMap));
+
+        // --- NEW: STATS FILE GENERATION ---
+        const totalMonsters = rooms.reduce((acc, r) => acc + r.monsters.length, 0);
+        const totalObjects = rooms.reduce((acc, r) => acc + r.objects.length, 0);
+        
+        const statsContent = `Project Statistics
+==================
+Area Name:  ${exportSettings.areaName}
+Base Path:  ${exportSettings.basePath}
+Base Level: ${exportSettings.baseLevel}
+
+Counts
+------
+Total Rooms:        ${rooms.length}
+Placed Monsters:    ${totalMonsters}
+Placed Objects:     ${totalObjects}
+Unique Object Defs: ${objectLibrary.length}
+`;
+        f.folder("docs").file("stats.txt", statsContent);
+        // ----------------------------------
 
         saveAs(await zip.generateAsync({type:"blob"}), `${area}.zip`);
     }
 
-    function downloadJSON() { 
-        const payload = { rooms, links, objectLibrary, exportSettings };
-        saveAs(new Blob([JSON.stringify(payload)],{type:'application/json'}), 'mud.json'); 
-    }
-    function importData() {
-        let i = document.createElement('input'); i.type='file';
-        i.onchange=e=>{ 
-            let r=new FileReader(); 
-            r.onload=ev=>{ 
-                let d=JSON.parse(ev.target.result); 
-                rooms=d.rooms; links=d.links; objectLibrary=d.objectLibrary||[]; exportSettings=d.exportSettings||exportSettings;
-                activeRoom=rooms[0]; currentZ=activeRoom.z; 
-                document.getElementById('area-name').value = exportSettings.areaName;
-                document.getElementById('base-path').value = exportSettings.basePath;
-                document.getElementById('base-level').value = exportSettings.baseLevel;
-                syncUI();
-            }; r.readAsText(e.target.files[0]); 
-        }; i.click();
-    }
+    function downloadJSON() { saveAs(new Blob([JSON.stringify({ rooms, links, objectLibrary, exportSettings })],{type:'application/json'}), 'mud.json'); }
+    function importData() { let i = document.createElement('input'); i.type='file'; i.onchange=e=>{ let r=new FileReader(); r.onload=ev=>{ let d=JSON.parse(ev.target.result); rooms=d.rooms; links=d.links; objectLibrary=d.objectLibrary||[]; exportSettings=d.exportSettings||exportSettings; activeRoom=rooms[0]; currentZ=activeRoom.z; document.getElementById('area-name').value = exportSettings.areaName; document.getElementById('base-path').value = exportSettings.basePath; document.getElementById('base-level').value = exportSettings.baseLevel; syncUI(); }; r.readAsText(e.target.files[0]); }; i.click(); }
 
-    // Start
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", init);
-    } else {
-        init();
-    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 </script>
 </body>
 </html>
