@@ -559,6 +559,40 @@
             <label>Keywords</label><input type="text" value="${d.keywords}" oninput="activeRoom.details[currentEditId].keywords = this.value"><label>Description</label><textarea rows="6" oninput="activeRoom.details[currentEditId].desc = this.value">${d.desc}</textarea>`;
     }
 
+    /* --- COMBAT MECHANICS --- */
+    function addMechanicToMonster() {
+        const m = monsterLibrary[currentEditId];
+        if (!m.mechanics) m.mechanics = [];
+        
+        const name = document.getElementById('mech-name').value;
+        const cmd = document.getElementById('mech-cmd').value;
+        if (!name || !cmd) {
+            alert("Name and Command are required!");
+            return;
+        }
+
+        m.mechanics.push({
+            name: name,
+            cmd: cmd,
+            priority: parseInt(document.getElementById('mech-pri').value) || 1,
+            cooldown: parseInt(document.getElementById('mech-cd').value) || 2,
+            initial_cooldown: parseInt(document.getElementById('mech-icd').value) || 0,
+            global_cooldown: parseInt(document.getElementById('mech-gcd').value) || 0,
+            condition: document.getElementById('mech-cond').value || "",
+            cast_time: parseFloat(document.getElementById('mech-cast').value) || 0,
+            interrupt: document.getElementById('mech-int').checked ? 1 : 0,
+            message: document.getElementById('mech-msg').value || "",
+            lockout: document.getElementById('mech-lock').checked ? 1 : 0
+        });
+
+        openMonsterModal(currentEditId);
+    }
+
+    function removeMechanicFromMonster(index) {
+        monsterLibrary[currentEditId].mechanics.splice(index, 1);
+        openMonsterModal(currentEditId);
+    }
+
     /* --- MONSTER MODAL --- */
     function openMonsterModal(idx) {
         currentEditType = 'monster'; currentEditId = idx;
@@ -568,6 +602,7 @@
         // Migrate old saves safely
         if(m.levelAdj === undefined) m.levelAdj = 0;
         if(m.spells === undefined) m.spells = [];
+        if(m.mechanics === undefined) m.mechanics = [];
         if(m.speechOut === undefined) m.speechOut = "";
         if(m.speechIn === undefined) m.speechIn = "";
         if(m.speechChance === undefined) m.speechChance = 5;
@@ -597,6 +632,96 @@
             return `<span class="tag-pill">${s} <span class="remove" onclick="removeMonSpell(${i})">x</span></span>`;
         }).join('');
 
+let mechanicsUI = `
+            <details style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;" ${m.mechanics.length > 0 ? 'open' : ''}>
+                <summary style="font-size:0.7rem; color:#888; text-transform:uppercase; font-weight:700; cursor:pointer; user-select:none; outline:none;">
+                    Combat Mechanics <span style="font-size:0.6rem; font-weight:normal; text-transform:none; color:#555;">(Click to expand)</span>
+                </summary>
+                
+                <div style="margin-top:10px;">
+                    <div id="mechanics-list" style="margin-bottom: 10px;">
+                        ${m.mechanics.map((mech, i) => `
+                            <div class="list-item" style="flex-direction:column; align-items:flex-start; cursor:default;">
+                                <div style="display:flex; justify-content:space-between; width:100%;">
+                                    <span style="pointer-events:none;"><strong>${mech.name}</strong> (Cmd: <span style="color:var(--accent)">${mech.cmd}</span>)</span>
+                                    <button class="btn-red btn-sm" onclick="removeMechanicFromMonster(${i})" style="pointer-events:auto;">X</button>
+                                </div>
+                                <div style="font-size:0.75rem; color:#aaa; margin-top:4px; pointer-events:none;">
+                                    Pri: ${mech.priority} | CD: ${mech.cooldown}s | InitCD: ${mech.initial_cooldown}s | GCD: ${mech.global_cooldown}s | Cast: ${mech.cast_time}s
+                                </div>
+                                ${mech.condition ? `<div style="font-size:0.75rem; color:#8aa; pointer-events:none;">Cond: ${mech.condition}</div>` : ''}
+                                ${mech.message ? `<div style="font-size:0.75rem; color:#aa8; pointer-events:none;">Msg: ${mech.message}</div>` : ''}
+                            </div>
+                        `).join('')}
+                        ${m.mechanics.length === 0 ? '<div style="color:#666; font-size:0.8rem;">No mechanics added yet.</div>' : ''}
+                    </div>
+                    
+<div style="background:#1a1a1a; padding:10px; border:1px solid #333; border-radius:4px;">
+                        <h4 style="margin-top:0; margin-bottom:10px; color:#888;">Add New Mechanic</h4>
+                        
+                        <div style="display:flex; gap:5px; margin-bottom:2px;">
+                            <input type="text" id="mech-name" placeholder="Name (e.g. Bone Storm)" style="flex:1">
+                            <input type="text" id="mech-cmd" placeholder="Command (e.g. fear $T)" style="flex:2">
+                            <input type="number" id="mech-pri" placeholder="Pri (1)" title="Priority" style="width:60px">
+                        </div>
+                        
+                        <details style="margin-bottom:8px; font-size:0.75rem; color:#aaa;">
+                            <summary style="cursor:pointer; color:var(--accent); font-weight:bold; display:inline-block; user-select:none;">
+                                ⓘ View Command Target Substitutions
+                            </summary>
+                            <div style="background:#222; padding:8px; border:1px solid #444; border-radius:4px; margin-top:4px;">
+                                <div style="display:grid; grid-template-columns: min-content 1fr; gap: 6px 15px; color:#ccc;">
+                                    <strong style="color:#e67e22">$T</strong> <span>The current target</span>
+                                    <strong style="color:#e67e22">$A</strong> <span>The current top of aggro <span style="color:#888">(can vary from target due to taunts)</span></span>
+                                    <strong style="color:#e67e22">$a</strong> <span>The second top of aggro <span style="color:#888">(i.e. second after tank)</span></span>
+                                    <strong style="color:#e67e22">$R</strong> <span>Random person from current attackers</span>
+                                    <strong style="color:#e67e22">$r</strong> <span>Random person from attackers, <span style="color:#c0392b">EXCLUDING</span> the current target</span>
+                                    <strong style="color:#e67e22">$H</strong> <span>The current top of Healing Done</span>
+                                    <strong style="color:#e67e22">$h</strong> <span>Random attacker, <span style="color:#c0392b">EXCLUDING</span> the top of Healing Done</span>
+                                    <strong style="color:#e67e22">$C</strong> <span>Custom target. <span style="color:#888">You must override query_mechanic_target() in code</span></span>
+                                </div>
+                            </div>
+                        </details>
+
+                        <div style="display:flex; gap:5px; margin-bottom:5px;">
+                            <input type="number" id="mech-cd" placeholder="CD (s)" title="Cooldown" style="width:25%">
+                            <input type="number" id="mech-icd" placeholder="InitCD (s)" title="Initial Cooldown" style="width:25%">
+                            <input type="number" id="mech-gcd" placeholder="GCD (s)" title="Global Cooldown" style="width:25%">
+                            <input type="number" id="mech-cast" placeholder="Cast (s)" title="Cast Time" style="width:25%">
+                        </div>
+                        
+                        <input type="text" id="mech-cond" placeholder="Condition (e.g. query_hp() < 500)" style="margin-bottom:2px;">
+                        
+                        <details style="margin-bottom:8px; font-size:0.75rem; color:#aaa;">
+                            <summary style="cursor:pointer; color:var(--accent); font-weight:bold; display:inline-block; user-select:none;">
+                                ⓘ View Condition Examples
+                            </summary>
+                            <div style="background:#222; padding:8px; border:1px solid #444; border-radius:4px; margin-top:4px;">
+                                <ul style="margin:0; padding-left:15px; color:#ccc; display:flex; flex-direction:column; gap:6px;">
+                                    <li><code style="color:#e67e22">query_hp() < query_max_hp() / 2</code> <br><span style="color:#888">Triggers when the monster drops below 50% health.</span></li>
+                                    <li><code style="color:#e67e22">query_hp() < 500</code> <br><span style="color:#888">Triggers when the monster has less than 500 HP remaining.</span></li>
+                                    <li><code style="color:#e67e22">sizeof(query_attackers()) > 1</code> <br><span style="color:#888">Triggers only if fighting more than one enemy (Great for AoE abilities).</span></li>
+                                    <li><code style="color:#e67e22">$1->query_hp() < 200</code> <br><span style="color:#888">The current target is passed as $1. Triggers if the target is below 200 HP (Great for 'Execute' or finishing moves).</span></li>
+                                    <li><code style="color:#e67e22">random(100) < 30</code> <br><span style="color:#888">Adds a 30% chance to execute even if the cooldown is ready, adding unpredictability.</span></li>
+                                </ul>
+                            </div>
+                        </details>
+
+                        <input type="text" id="mech-msg" placeholder="Message on Cast (e.g. $T screams!)" style="margin-bottom:5px;">
+                        
+                        <div style="display:flex; gap:15px; margin-top:5px; margin-bottom: 10px;">
+                            <label style="display:inline-flex; align-items:center; flex-direction:row; gap:5px; margin:0; color:#ccc;">
+                                <input type="checkbox" id="mech-int" style="width:auto; margin:0;"> Interruptible
+                            </label>
+                            <label style="display:inline-flex; align-items:center; flex-direction:row; gap:5px; margin:0; color:#ccc;">
+                                <input type="checkbox" id="mech-lock" style="width:auto; margin:0;"> No Room Lockout
+                            </label>
+                        </div>
+                        <button class="action-btn btn-blue" onclick="addMechanicToMonster()">+ Add Mechanic</button>
+                    </div>
+					</div>
+            </details>
+        `;
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;"><div style="flex:1"><label>ID Name</label><input type="text" value="${m.idName}" oninput="updateMon('idName', this.value)"></div><div style="flex:1"><label>Short Desc</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div></div>
             <div style="display:flex; gap:10px;"><div style="flex:1"><label>Lvl Adj</label><input type="number" value="${m.levelAdj}" oninput="updateMon('levelAdj', this.value)"></div><div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Arachnid','Artrell','Aurin','Basilisk','Bat','Bee','Beetle','Beholder','Bird','Carrion-crawler','Centaur','Centipede','Chimera','Cockatrice','Crocodile','Crustacean','Dagon','Drider','Drow','Dwarf','Elf','Equine','Equine-winged','Faerie','Fish','Frog','Giant','Gnome','Half-Elf','Halfling','Half-Orc','Human','Humanoid-tail','Insectoid','nsectoid-winged','Lizardman','Merperson','Null','Nymph','Octopus','Otyugh','Quadruped','Quadruped-winged','Ray','Reptile','Reptile-winged','Satyr','Slime','Snakeman','Snae-winged','Turtle','Worm'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div><div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${Object.keys(CLASS_SPELLS).map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div></div>
@@ -618,6 +743,8 @@
                 <div style="margin-top:5px;">${spellList}</div>
             </div>
 
+            ${mechanicsUI}
+
             <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
                 <div style="display:flex; gap:10px;">
                     <div style="flex:1"><label style="margin-top:0;">Speech Chance (%)</label><input type="number" value="${m.speechChance}" oninput="updateMon('speechChance', this.value)"></div>
@@ -632,7 +759,7 @@
     }
     
     function createMonsterDef(idName, short, race, cls) { 
-        monsterLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `A ${race.toLowerCase()}.`, race, class: cls, levelAdj: 0, gender: "neuter", alignment: 0, inventory: [], spells: [], speechOut: "", speechIn: "", speechChance: 5, speechLang: "common" }); 
+        monsterLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `A ${race.toLowerCase()}.`, race, class: cls, levelAdj: 0, gender: "neuter", alignment: 0, inventory: [], spells: [], mechanics: [], speechOut: "", speechIn: "", speechChance: 5, speechLang: "common" }); 
     }
     function updateAlignUI(val) { val = parseInt(val); monsterLibrary[currentEditId].alignment = val; document.getElementById('align-lbl').innerText = `${getAlignLabel(val)} (${val})`; }
     function updateMon(k,v) { 
@@ -831,7 +958,7 @@
             monMap[m.id] = fname;
             
             let gear = ""; m.inventory.forEach(id => { if(objMap[id]) gear += `    add_object(OBJDIR+"${objMap[id]}");\n`; });
-            if(gear) gear += `    command("wear all");\n    command("wield all");`;
+            if(gear) gear += `    command("wear all");\n    command("wield all");\n`;
             let clsCode = (m.class && m.class.toLowerCase() !== "none") ? `    set_class("${m.class.toLowerCase()}");\n` : "";
             
             let spellCode = (m.spells && m.spells.length > 0) ? `    set_spells(({"${m.spells.join('","')}"}));\n` : "";
@@ -850,7 +977,19 @@
                 speechCode += `    set_speech(${chance}, "${lang}", ({\n        "${inChat.join('",\n        "')}"\n    }), 1);\n`;
             }
 
-            f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", m.short)}\n${formatLPC("set_long", m.long)}\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${spellCode}${speechCode}${gear}\n}`);
+            let mechanicsCode = "";
+            if (m.mechanics && m.mechanics.length > 0) {
+                m.mechanics.forEach(mech => {
+                    let mechStr = `    add_mechanic("${mech.name}", "${mech.cmd}", ${mech.priority}, ${mech.cooldown}`;
+                    if(mech.initial_cooldown || mech.global_cooldown || mech.condition || mech.cast_time || mech.interrupt || mech.message || mech.lockout) {
+                        mechStr += `, ${mech.initial_cooldown}, ${mech.global_cooldown}, ${mech.condition ? `(: ${mech.condition} :)` : '0'}, ${mech.cast_time}, ${mech.interrupt}, ${mech.message ? `"${mech.message}"` : '0'}, ${mech.lockout}`;
+                    }
+                    mechStr += `);\n`;
+                    mechanicsCode += mechStr;
+                });
+            }
+
+            f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", m.short)}\n${formatLPC("set_long", m.long)}\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${spellCode}${speechCode}${mechanicsCode}${gear}}`);
         });
 
         const rMap = {}; const names = {};
