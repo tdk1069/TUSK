@@ -195,13 +195,176 @@
     // SPELL LISTS BY CLASS
     const CLASS_SPELLS = {
         'None': [],
-        'Fighter': ['bump', 'snarl', 'cleave', 'bash', 'charge'],
-        'Warmage': ['fireball', 'blast', 'magic missile', 'frostbite', 'shock'],
-        'Cleric': ['cure', 'smite', 'bless', 'holy strike', 'heal'],
-        'Rogue': ['backstab', 'hide', 'poison', 'gouge', 'sap'],
-        'Druid': ['ffire', 'lightning', 'entangle', 'swarm', 'barkskin'],
-        'Monk': ['kick', 'punch', 'sweep', 'palm', 'focus'],
-        'Ranger': ['shoot', 'track', 'multishot', 'aim', 'snare']
+		'Fighter': [
+			// --- Combat ---
+			'fwrath', 'storm', 'whirl', 'charge', 'harass', 'fan', 'chop', 
+			'plunge', 'pommel', 'wind', 'press', 'cleave', 'aim', 'headstrike', 
+			'hone', 'rap', 'bump', 'thrust',
+
+			// --- Defence ---
+			'sweep', 'position', 'takedown', 'pivot', 'impede', 'regroup', 
+			'disarm', 'misderect',
+
+			// --- Ferocity ---
+			'frenzy', 'headbutt', 'fury', 'disembowel', 'burst', 'thunder', 
+			'channel', 'invigorate', 'scythe', 'gore', 'quickstrike', 'trophy', 
+			'butcher',
+
+			// --- Shields ---
+			'divert', 'shieldstrike', 'fend', 'clear', 'smash', 'batter', 
+			'bash',
+
+			// --- Tank ---
+			'rampage', 'tower', 'mutilate', 'infuriate', 'decimate', 'surge', 
+			'carve', 'challenge', 'shieldwall', 'whiplash', 'steadfast', 
+			'sunder', 'reave', 'taunt',
+
+			// --- Warcry ---
+			'terrify', 'warcry', 'fighterpose', 'snarl', 'goad'
+		],
+		'Warmage': [
+			// Magic Defence
+			'innervate', 'shockwall', 'fortify', 'iceblock', 'manashield', 
+			'counterspell', 'shroud', 'amagic',
+
+			// Magic Attack
+			'plance', 'shockwave', 'inferno', 'glacier', 'static', 
+			'meteor', 'antipode', 'pspray', 'blast', 'dbfireball', 
+			'abolt', 'midwinter', 'scorch', 'annihilate', 'icelance', 
+			'fireball', 'icebolt', 'confuse', 'cage', 'bolt', 
+			'burn', 'cone', 'disintegrate', 'fear', 'weaken', 'missile',
+
+			// Conjuring
+			'dfocus', 'summon', 'grary', 'drage', 'reflect', 
+			'reverse', 'haste', 'slow', 'dismiss', 'mpose', 
+			'rary', 'absorb', 'conjure', 'light', 'enchant', 
+			'portal', 'teleport', 'fudd', 'lore', 'mirror', 
+			'mist', 'chains', 'comprehend', 'scry'
+		],
+		'Cleric': [
+			// --- Auria (Life, Youth, Nurturing) ---
+			'harmony', 'heal', 'resurrect', 'soothe', 'cdisease', 
+			'revive', 'refresh', 'remedy', 'cure', 'replace', 
+			'purify', 'discern', 'preserve', 'mend',
+
+			// --- Brangwen (Battle, Courage, War) ---
+			'imbue', 'fstrike', 'quake', 'enunciate', 'chant', 
+			'entreat', 'guidance', 'bless', 'sprinkle',
+
+			// --- Caitlin (Protection, Endurance) ---
+			'sentinel', 'aid', 'succor', 'buffer', 'barrier', 
+			'silence', 'sanctuary', 'rcurse', 'ward', 'peace', 
+			'rparalysis', 'shield',
+
+			// --- Jeroth (Faith, Purity, Justice) ---
+			'holy', 'scourge', 'exorcise', 'wrath', 'smite', 
+			'sanctify', 'dispel', 'tongues', 'rebuke', 'cgaze', 
+			'turn', 'soulsee', 'release'
+		],
+		'Rogue': [
+			// --- Whip ---
+			'flog', 'wscourge', 'wcrack', 'thrash', 'flay', 
+			'wsnap', 'lash', 'flick',
+
+			// --- Stealth ---
+			'rhide', 'cutpurse', 'eavesdrop', 'slip', 'steal', 
+			'place', 'filch', 'ppocket', 'stealth', 'sneak', 'peek',
+
+			// --- Skullduggery ---
+			'envenom', 'lace', 'ingest', 'smokebomb', 'acidbomb', 
+			'gasbomb', 'stinkbomb', 'disguise', 'snatch', 'slit', 
+			'firecracker', 'grab', 'shard', 'serrate', 'defuse', 
+			'assess', 'kickme', 'lockpick', 'toolkit',
+
+			// --- Murder ---
+			'assassinate', 'hamstring', 'gut', 'bag', 'perforate', 
+			'backstab', 'stab', 'gouge', 'trip', 'garotte', 
+			'knock', 'lunge', 'shank', 'rgpose', 'twist', 
+			'sap', 'shiv',
+
+			// --- Defence ---
+			'deflect', 'blindfight', 'dodge', 'vanish', 'flank',
+
+			// --- Bargaining ---
+			'acoward', 'braggart', 'cut', 'distract', 'haggle', 
+			'appraise', 'strip'
+		],
+		'Druid': [
+			// --- Woodcraft ---
+			'pfury', 'umbra', 'change', 'doom', 'manaspring', 
+			'passoak', 'liveoak', 'briars', 'entangle', 'hold', 
+			'barkskin', 'tree', 'ffire', 'spirit', 'befriend', 
+			'fire', 'detect', 'balance', 'empathy', 'plant', 
+			'predict',
+
+			// --- Healing ---
+			'wgrowth', 'nurture', 'recovery', 'symbiosis', 'oakshield', 
+			'wellspring', 'restore', 'showers', 'regenerate', 'seed', 
+			'regrowth', 'rejuvenate', 'serenity', 'rebirth', 'bloom', 
+			'reincarnate', 'revitalise', 'swiftness', 'veil', 'breeze', 
+			'neutralize', 'nourish', 'goodberry',
+
+			// --- Ferocity ---
+			'crush', 'rend', 'eviscerate', 'mangle', 'enrage', 
+			'furor', 'claw', 'droar', 'ravage', 'fervor', 
+			'lacerate', 'maim', 'roar', 'evade', 'swipe', 
+			'uswipe', 'ironhide', 'rip', 'rush', 'vigour', 
+			'pounce', 'ram', 'ravening', 'thorns', 'rake', 
+			'bite', 'devour', 'growl', 'maul', 'prowl', 
+			'fly', 'pilfer',
+
+			// --- Conjuring ---
+			'deluge', 'tremor', 'wildfire', 'rockfall', 'death', 
+			'windstrike', 'cyclone', 'elemental', 'tornado', 'primal', 
+			'starbeam', 'chain', 'heat', 'weather', 'frostbite', 
+			'heatwave', 'animate', 'protect', 'lightning', 'sear', 
+			'stone', 'wall', 'shillelagh', 'cloud', 'pebble', 
+			'torch'
+		],
+		'Monk': [
+			// --- Chi / Offensive ---
+			'qpalm', 'chistorm', 'fow', 'cacophony', 'epalm', 
+			'chihaste', 'palm', 
+
+			// --- Chi / Defensive ---
+			'premonition', 'reiki', 'hhands', 'presence', 'focus', 
+			'subdue', 'chishield', 
+
+			// --- Physical / Offensive ---
+			'dkick', 'assault', 'kick', 'punch', 'blind', 
+			'stun', 'pummel', 'spin', 
+
+			// --- Physical / Defensive ---
+			'counter', 'yado', 'awareness', 'freeaction', 'step', 
+			'backflip', 'block', 
+
+			// --- Utility / None ---
+			'starch', 'sew', 'stance', 'monkpose'
+		],
+		'Ranger': [
+			// --- Woodcraft ---
+			'rtattoo', 'feed', 'snare', 'disable', 'canimal', 
+			'instruct', 'skin', 'track', 'fcall', 'root', 
+			'rrod', 'sentry', 'fwhistle', 'make', 'tcheck', 
+			'erase', 'lay',
+
+			// --- Projectile ---
+			'skewer', 'rstring', 'rapid', 'fix', 'rshot', 
+			'bowyer', 'hunt', 'volley', 'sshot', 'forage', 
+			'fletch', 'ashot',
+
+			// --- Healing ---
+			'salve', 'rpose', 'bandage',
+
+			// --- Blade ---
+			'slice', 'ambush', 'feint',
+
+			// --- Stealth ---
+			'pursue', 'conceal',
+
+			// --- Constitution ---
+			'swind'
+		]
     };
 
     function getAlignLabel(val) {
@@ -436,7 +599,7 @@
 
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;"><div style="flex:1"><label>ID Name</label><input type="text" value="${m.idName}" oninput="updateMon('idName', this.value)"></div><div style="flex:1"><label>Short Desc</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div></div>
-            <div style="display:flex; gap:10px;"><div style="flex:1"><label>Lvl Adj</label><input type="number" value="${m.levelAdj}" oninput="updateMon('levelAdj', this.value)"></div><div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Human','Dwarf','Elf','Half-Orc','Goblin','Orc','Troll','Giant','Dragon','Animal','Undead','Demon','Elemental'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div><div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${Object.keys(CLASS_SPELLS).map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div></div>
+            <div style="display:flex; gap:10px;"><div style="flex:1"><label>Lvl Adj</label><input type="number" value="${m.levelAdj}" oninput="updateMon('levelAdj', this.value)"></div><div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Arachnid','Artrell','Aurin','Basilisk','Bat','Bee','Beetle','Beholder','Bird','Carrion-crawler','Centaur','Centipede','Chimera','Cockatrice','Crocodile','Crustacean','Dagon','Drider','Drow','Dwarf','Elf','Equine','Equine-winged','Faerie','Fish','Frog','Giant','Gnome','Half-Elf','Halfling','Half-Orc','Human','Humanoid-tail','Insectoid','nsectoid-winged','Lizardman','Merperson','Null','Nymph','Octopus','Otyugh','Quadruped','Quadruped-winged','Ray','Reptile','Reptile-winged','Satyr','Slime','Snakeman','Snae-winged','Turtle','Worm'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div><div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${Object.keys(CLASS_SPELLS).map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div></div>
             
             <div style="display:flex; gap:10px;">
                 <div style="flex:1">
