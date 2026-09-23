@@ -606,7 +606,23 @@
         if(m.speechOut === undefined) m.speechOut = "";
         if(m.speechIn === undefined) m.speechIn = "";
         if(m.speechChance === undefined) m.speechChance = 5;
-        if(m.speechLang === undefined) m.speechLang = "common";
+        if(m.speechLang === undefined) m.speechLang = "farsi";
+        if(m.secondClass === undefined) m.secondClass = "None";
+        if(m.aggressive === undefined) m.aggressive = 0;
+        if(m.wimpy === undefined) m.wimpy = "";
+        if(m.wimpyDir === undefined) m.wimpyDir = "";
+        if(m.spellChance === undefined) m.spellChance = 5;
+        if(m.languages === undefined) m.languages = [];
+        if(m.langProf === undefined) m.langProf = [];
+        if(m.damageType === undefined) m.damageType = [];
+        if(m.aquatic === undefined) m.aquatic = false;
+        if(m.mood === undefined) m.mood = "";
+        if(m.noSteal === undefined) m.noSteal = {mode:"off", message:""};
+        if(m.band === undefined) m.band = "";
+        if(m.party === undefined) m.party = "";
+        if(m.resistances === undefined) m.resistances = [];
+        if(m.dieMessage === undefined) m.dieMessage = "";
+        if(m.undeadType === undefined) m.undeadType = "none";
 
         openModal("Edit Monster");
         const alignLabel = getAlignLabel(m.alignment);
@@ -631,6 +647,69 @@
         let spellList = m.spells.map((s, i) => {
             return `<span class="tag-pill">${s} <span class="remove" onclick="removeMonSpell(${i})">x</span></span>`;
         }).join('');
+
+let advancedUI = `
+            <details style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                <summary style="font-size:0.7rem; color:#888; text-transform:uppercase; font-weight:700; cursor:pointer; user-select:none; outline:none;">
+                    Advanced Attributes <span style="font-size:0.6rem; font-weight:normal; text-transform:none; color:#555;">(Click to expand)</span>
+                </summary>
+                <div style="margin-top:10px;">
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1"><label style="margin-top:0;">Second Guild</label><select onchange="updateMon('secondClass', this.value)">${Object.keys(CLASS_SPELLS).map(c=>`<option ${m.secondClass===c?'selected':''}>${c}</option>`)}</select></div>
+                        <div style="flex:1"><label style="margin-top:0;">Undead Type</label><select onchange="updateMon('undeadType', this.value)"><option value="none" ${m.undeadType==='none'?'selected':''}>None</option><option value="undead" ${m.undeadType==='undead'?'selected':''}>Undead</option><option value="skeleton" ${m.undeadType==='skeleton'?'selected':''}>Skeleton</option><option value="ghoul" ${m.undeadType==='ghoul'?'selected':''}>Ghoul</option></select></div>
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1"><label style="margin-top:0;">Band (shared aggro)</label><input type="text" value="${m.band}" oninput="updateMon('band', this.value)" placeholder="e.g. Killer Gibbons Ahoy"></div>
+                        <div style="flex:1"><label style="margin-top:0;">Party (ranks)</label><input type="text" value="${m.party}" oninput="updateMon('party', this.value)" placeholder="e.g. Larnens party"></div>
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1"><label style="margin-top:0;">Aggressive Cha Threshold</label><input type="number" value="${m.aggressive}" oninput="updateMon('aggressive', this.value)"></div>
+                        <div style="flex:1"><label style="margin-top:0;">Spell Chance (%/round)</label><input type="number" value="${m.spellChance}" oninput="updateMon('spellChance', this.value)"></div>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1"><label style="margin-top:0;">Wimpy (%)</label><input type="number" value="${m.wimpy}" oninput="updateMon('wimpy', this.value)"></div>
+                        <div style="flex:1"><label style="margin-top:0;">Wimpy Direction</label><input type="text" value="${m.wimpyDir}" oninput="updateMon('wimpyDir', this.value)" placeholder="e.g. out"></div>
+                    </div>
+
+                    <label style="margin-top:10px;">Mood</label><input type="text" value="${m.mood}" oninput="updateMon('mood', this.value)" placeholder="e.g. happy">
+
+                    <label style="display:inline-flex; align-items:center; flex-direction:row; gap:5px; margin-top:10px; color:#ccc;">
+                        <input type="checkbox" ${m.aquatic?'checked':''} onchange="updateMon('aquatic', this.checked)" style="width:auto; margin:0;"> Aquatic (can breathe underwater)
+                    </label>
+
+                    <label style="margin-top:10px;">No Steal</label>
+                    <select onchange="updateNoSteal(this.value)">
+                        <option value="off" ${m.noSteal.mode==='off'?'selected':''}>Off (stealable)</option>
+                        <option value="default" ${m.noSteal.mode==='default'?'selected':''}>Blocked (default message)</option>
+                        <option value="message" ${m.noSteal.mode==='message'?'selected':''}>Blocked (custom message)</option>
+                    </select>
+                    <div id="nosteal-msg-wrap" style="display:${m.noSteal.mode==='message'?'block':'none'}">
+                        <input type="text" value="${m.noSteal.message}" oninput="monsterLibrary[currentEditId].noSteal.message=this.value" placeholder="Message shown to thief">
+                    </div>
+
+                    <label style="margin-top:10px;">Death Message (overrides default)</label>
+                    <textarea rows="2" oninput="updateMon('dieMessage', this.value)" placeholder="The orc crumbles to the ground, bleeding profusely.">${m.dieMessage}</textarea>
+
+                    <label style="margin-top:10px;">Natural Damage Type(s) <span style="font-weight:normal; text-transform:none; color:#555;">(unarmed hits)</span></label>
+                    <div style="display:flex; gap:5px;"><input type="text" id="mon-dmgtype-input" placeholder="e.g. fire"><button class="dir-btn" onclick="addMonDamageType()">+</button></div>
+                    <div style="margin-top:5px;">${m.damageType.map((d,i)=>`<span class="tag-pill">${d} <span class="remove" onclick="removeMonDamageType(${i})">x</span></span>`).join('')}</div>
+
+                    <label style="margin-top:10px;">Resistances <span style="font-weight:normal; text-transform:none; color:#555;">(type / % — avoid exactly 100, use 101 for near-immune)</span></label>
+                    <div style="display:flex; gap:5px;"><input type="text" id="mon-resist-type" placeholder="e.g. fire" style="flex:2"><input type="number" id="mon-resist-pct" placeholder="%" style="flex:1"><button class="dir-btn" onclick="addMonResist()">+</button></div>
+                    <div style="margin-top:5px;">${m.resistances.map((r,i)=>`<span class="tag-pill">${r.type}: ${r.pct}% <span class="remove" onclick="removeMonResist(${i})">x</span></span>`).join('')}</div>
+
+                    <label style="margin-top:10px;">Fluent Languages</label>
+                    <div style="display:flex; gap:5px;"><input type="text" id="mon-lang-input" placeholder="e.g. elephantish"><button class="dir-btn" onclick="addMonLang()">+</button></div>
+                    <div style="margin-top:5px;">${m.languages.map((l,i)=>`<span class="tag-pill">${l} <span class="remove" onclick="removeMonLang(${i})">x</span></span>`).join('')}</div>
+
+                    <label style="margin-top:10px;">Partial Language Fluency <span style="font-weight:normal; text-transform:none; color:#555;">(lang / 1-10)</span></label>
+                    <div style="display:flex; gap:5px;"><input type="text" id="mon-langprof-name" placeholder="e.g. farsi" style="flex:2"><input type="number" id="mon-langprof-val" placeholder="1-10" min="1" max="10" style="flex:1"><button class="dir-btn" onclick="addMonLangProf()">+</button></div>
+                    <div style="margin-top:5px;">${m.langProf.map((p,i)=>`<span class="tag-pill">${p.lang}: ${p.prof} <span class="remove" onclick="removeMonLangProf(${i})">x</span></span>`).join('')}</div>
+                </div>
+            </details>
+        `;
 
 let mechanicsUI = `
             <details style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;" ${m.mechanics.length > 0 ? 'open' : ''}>
@@ -743,6 +822,8 @@ let mechanicsUI = `
                 <div style="margin-top:5px;">${spellList}</div>
             </div>
 
+            ${advancedUI}
+
             ${mechanicsUI}
 
             <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
@@ -759,7 +840,7 @@ let mechanicsUI = `
     }
     
     function createMonsterDef(idName, short, race, cls) { 
-        monsterLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `A ${race.toLowerCase()}.`, race, class: cls, levelAdj: 0, gender: "neuter", alignment: 0, inventory: [], spells: [], mechanics: [], speechOut: "", speechIn: "", speechChance: 5, speechLang: "common" }); 
+        monsterLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `A ${race.toLowerCase()}.`, race, class: cls, levelAdj: 0, gender: "neuter", alignment: 0, inventory: [], spells: [], mechanics: [], speechOut: "", speechIn: "", speechChance: 5, speechLang: "farsi", secondClass: "None", aggressive: 0, wimpy: "", wimpyDir: "", spellChance: 5, languages: [], langProf: [], damageType: [], aquatic: false, mood: "", noSteal: {mode:"off", message:""}, band: "", party: "", resistances: [], dieMessage: "", undeadType: "none" }); 
     }
     function updateAlignUI(val) { val = parseInt(val); monsterLibrary[currentEditId].alignment = val; document.getElementById('align-lbl').innerText = `${getAlignLabel(val)} (${val})`; }
     function updateMon(k,v) { 
@@ -781,6 +862,32 @@ let mechanicsUI = `
         monsterLibrary[currentEditId].spells.splice(i,1); 
         openMonsterModal(currentEditId); 
     }
+
+    function updateNoSteal(mode) {
+        monsterLibrary[currentEditId].noSteal.mode = mode;
+        const wrap = document.getElementById('nosteal-msg-wrap');
+        if(wrap) wrap.style.display = mode === 'message' ? 'block' : 'none';
+    }
+
+    function addMonDamageType() { const el=document.getElementById('mon-dmgtype-input'); const v=el.value.trim(); if(v){ monsterLibrary[currentEditId].damageType.push(v.toLowerCase()); openMonsterModal(currentEditId); } }
+    function removeMonDamageType(i) { monsterLibrary[currentEditId].damageType.splice(i,1); openMonsterModal(currentEditId); }
+
+    function addMonResist() {
+        const type = document.getElementById('mon-resist-type').value.trim().toLowerCase();
+        const pct = parseInt(document.getElementById('mon-resist-pct').value);
+        if(type && !isNaN(pct)) { monsterLibrary[currentEditId].resistances.push({type, pct}); openMonsterModal(currentEditId); }
+    }
+    function removeMonResist(i) { monsterLibrary[currentEditId].resistances.splice(i,1); openMonsterModal(currentEditId); }
+
+    function addMonLang() { const el=document.getElementById('mon-lang-input'); const v=el.value.trim(); if(v){ monsterLibrary[currentEditId].languages.push(v.toLowerCase()); openMonsterModal(currentEditId); } }
+    function removeMonLang(i) { monsterLibrary[currentEditId].languages.splice(i,1); openMonsterModal(currentEditId); }
+
+    function addMonLangProf() {
+        const lang = document.getElementById('mon-langprof-name').value.trim().toLowerCase();
+        const prof = parseInt(document.getElementById('mon-langprof-val').value) || 1;
+        if(lang) { monsterLibrary[currentEditId].langProf.push({lang, prof}); openMonsterModal(currentEditId); }
+    }
+    function removeMonLangProf(i) { monsterLibrary[currentEditId].langProf.splice(i,1); openMonsterModal(currentEditId); }
 
     function addMonInv() { const v=document.getElementById('mon-inv-sel').value; if(v){ monsterLibrary[currentEditId].inventory.push(v); openMonsterModal(currentEditId); } }
     function removeMonInv(i) { monsterLibrary[currentEditId].inventory.splice(i,1); openMonsterModal(currentEditId); }
@@ -989,7 +1096,48 @@ let mechanicsUI = `
                 });
             }
 
-            f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", m.short)}\n${formatLPC("set_long", m.long)}\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${spellCode}${speechCode}${mechanicsCode}${gear}}`);
+            // --- Advanced Attributes ---
+            let secondClsCode = (m.secondClass && m.secondClass.toLowerCase() !== "none") ? `    set_second_class("${m.secondClass.toLowerCase()}");\n` : "";
+            let spellChanceCode = (m.spells && m.spells.length > 0) ? `    set_spell_chance(${parseInt(m.spellChance) || 5});\n` : "";
+            let aggroCode = (parseInt(m.aggressive) > 0) ? `    set_aggressive(${parseInt(m.aggressive)});\n` : "";
+
+            let wimpyCode = "";
+            if(m.wimpy !== "" && m.wimpy !== undefined && m.wimpy !== null && !isNaN(parseInt(m.wimpy))) wimpyCode += `    set_wimpy(${parseInt(m.wimpy)});\n`;
+            if(m.wimpyDir) wimpyCode += `    set_wimpydir("${m.wimpyDir}");\n`;
+
+            let moodCode = m.mood ? `    set_mood("${m.mood}");\n` : "";
+            let aquaticCode = m.aquatic ? `    set_aquatic(1);\n` : "";
+
+            let noStealCode = "";
+            if(m.noSteal && m.noSteal.mode === 'default') noStealCode = `    set("no steal",1);\n`;
+            else if(m.noSteal && m.noSteal.mode === 'message' && m.noSteal.message) noStealCode = `    set("no steal","${m.noSteal.message}");\n`;
+
+            let bandPartyCode = "";
+            if(m.band) bandPartyCode += `    set_band("${m.band}");\n`;
+            if(m.party) bandPartyCode += `    set_party("${m.party}");\n`;
+
+            let dmgTypeCode = "";
+            if(m.damageType && m.damageType.length === 1) dmgTypeCode = `    set("damage type","${m.damageType[0]}");\n`;
+            else if(m.damageType && m.damageType.length > 1) dmgTypeCode = `    set("damage type",({"${m.damageType.join('","')}"}));\n`;
+
+            let resistCode = "";
+            if(m.resistances && m.resistances.length > 0) {
+                m.resistances.forEach(r => { resistCode += `    set_resistance(DAMAGE_${r.type.toUpperCase().replace(/\s+/g,'_')},${r.pct});\n`; });
+            }
+
+            let langCode = "";
+            if(m.languages && m.languages.length > 0) langCode += `    set_languages(({"${m.languages.join('","')}"}));\n`;
+            if(m.langProf && m.langProf.length > 0) { m.langProf.forEach(p => { langCode += `    set_lang_prof("${p.lang}",${p.prof});\n`; }); }
+
+            let dieCode = m.dieMessage ? `    set_die("${m.dieMessage}");\n` : "";
+
+            let needsDamageInclude = (m.resistances && m.resistances.length > 0);
+            let inheritLine = "inherit MONSTER;";
+            if(m.undeadType === 'undead') inheritLine = 'inherit STD_MON("undead");';
+            else if(m.undeadType === 'skeleton') inheritLine = 'inherit STD_MON("skeleton");';
+            else if(m.undeadType === 'ghoul') inheritLine = 'inherit STD_MON("ghoul");';
+
+            f.folder("mon").file(fname, `#include "../include/include.h"\n${needsDamageInclude ? '#include <damage_types.h>\n' : ''}${inheritLine}\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", m.short)}\n${formatLPC("set_long", m.long)}\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}${secondClsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${spellCode}${spellChanceCode}${aggroCode}${wimpyCode}${moodCode}${aquaticCode}${noStealCode}${bandPartyCode}${dmgTypeCode}${resistCode}${langCode}${dieCode}${speechCode}${mechanicsCode}${gear}}`);
         });
 
         const rMap = {}; const names = {};
