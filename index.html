@@ -116,8 +116,38 @@
         <label>Terrain</label>
         <select id="r-terrain" onchange="syncRoom()">
             <option value="forest">Forest</option>
+            <option value="plains">Plains</option>
+            <option value="hills">Hills</option>
+            <option value="mountains">Mountains</option>
+            <option value="jungle">Jungle</option>
+            <option value="desert">Desert</option>
+            <option value="swamp">Swamp</option>
+            <option value="arctic">Arctic</option>
+            <option value="ocean">Ocean</option>
+            <option value="river">River</option>
+            <option value="cave">Cave</option>
+            <option value="road">Road</option>
             <option value="indoor">Indoor</option>
-            </select>
+        </select>
+
+        <label>Path</label>
+        <select id="r-path" onchange="syncRoom()">
+            <option value="0">None</option>
+            <option value="1">Major Road (large, horse-friendly)</option>
+            <option value="2">Path (single horse)</option>
+            <option value="3">Faint Path (foot only)</option>
+        </select>
+
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1"><label>Light Level</label><input type="number" id="r-light" oninput="syncRoom()"></div>
+            <div style="flex:1"><label>Night Light (optional)</label><input type="text" id="r-nightlight" placeholder="unset" oninput="syncRoom()"></div>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1"><label>Combat Modifier %</label><input type="number" id="r-combatmod" oninput="syncRoom()"></div>
+            <div style="flex:1"><label>Ceiling Height (in)</label><input type="number" id="r-height" placeholder="0 = unset" oninput="syncRoom()"></div>
+        </div>
+        <label style="display:flex; align-items:center; gap:6px; margin-top:10px;"><input type="checkbox" id="r-nopick" style="width:auto; margin:0;" onchange="syncRoom()"> Doors Unpickable (applies to all doors in room)</label>
+        <div id="nopick-msg-row" style="display:none; margin-top:5px;"><input type="text" id="r-nopickmsg" placeholder="Custom fail message (optional)" oninput="syncRoom()"></div>
 
         <hr>
         <h3>Exits & Doors</h3>
@@ -129,6 +159,10 @@
             <button class="action-btn btn-blue" style="width:auto; padding:5px 10px;" onclick="openDetailModal(-1)">+ Add</button>
         </div>
         <div id="detail-list" style="margin-top:10px;"></div>
+
+        <hr>
+        <h3>Special Room Features</h3>
+        <div id="special-features"></div>
 
         <hr>
         <div style="display:flex; gap:10px; margin-top:20px;">
@@ -453,8 +487,52 @@
 
     function createRoom(x, y, z, name) {
         const r = { id: Date.now()+Math.random(), x, y, z, name, longDesc: "A generic room.", terrain: "indoor", comments: "", details: [], monsters: [], objects: [] };
+        migrateRoom(r);
         rooms.push(r);
         return r;
+    }
+
+    /* --- BACKWARD-COMPAT MIGRATION HELPERS --- */
+    function migrateRoom(r) {
+        if(r.light === undefined) r.light = 1;
+        if(r.nightLight === undefined) r.nightLight = "";
+        if(r.path === undefined) r.path = 0;
+        if(r.combatModifier === undefined) r.combatModifier = 0;
+        if(r.height === undefined) r.height = 0;
+        if(r.noPick === undefined) r.noPick = false;
+        if(r.noPickMsg === undefined) r.noPickMsg = "";
+        if(r.atmos === undefined) r.atmos = { active:false, chance:20, sequential:false, messages:[] };
+        if(r.fishing === undefined) r.fishing = { active:false, maxFishing:5, chance:4, maxCatch:5, fish:[] };
+        if(r.stable === undefined) r.stable = { active:false, horses:[], currency:"", allowed:"", disallowed:"" };
+        if(!Array.isArray(r.objects)) r.objects = [];
+        if(!Array.isArray(r.monsters)) r.monsters = [];
+        r.objects = r.objects.map(o => (o && typeof o === 'object') ? o : { id:o, msg:"" });
+        r.monsters = r.monsters.map(m => (m && typeof m === 'object') ? m : { id:m, msg:"" });
+    }
+
+    function migrateLink(l) {
+        if(!l.door) return;
+        const d = l.door;
+        if(d.id === undefined) d.id = "door";
+        if(d.state === undefined) d.state = "closed";
+        if(d.keyObjId === undefined) {
+            if(d.key) {
+                let existing = objectLibrary.find(o => o.type === 'key' && o.keyId === d.key);
+                if(!existing) {
+                    createObjectDef(d.key, "a " + d.key, "key", "");
+                    existing = objectLibrary[objectLibrary.length - 1];
+                    existing.keyId = d.key;
+                }
+                d.keyObjId = existing.id;
+            } else {
+                d.keyObjId = "";
+            }
+        }
+        if(d.concealed === undefined) d.concealed = false;
+        if(d.msgOpen === undefined) d.msgOpen = "";
+        if(d.msgClose === undefined) d.msgClose = "";
+        if(d.msgLock === undefined) d.msgLock = "";
+        if(d.msgUnlock === undefined) d.msgUnlock = "";
     }
 
     /* --- INITIALIZATION --- */
@@ -471,9 +549,18 @@
     
     function syncUI() {
         if(!activeRoom) return;
+        migrateRoom(activeRoom);
         document.getElementById('r-name').value = activeRoom.name;
         document.getElementById('r-long').value = activeRoom.longDesc;
         document.getElementById('r-terrain').value = activeRoom.terrain;
+        document.getElementById('r-path').value = activeRoom.path;
+        document.getElementById('r-light').value = activeRoom.light;
+        document.getElementById('r-nightlight').value = activeRoom.nightLight;
+        document.getElementById('r-combatmod').value = activeRoom.combatModifier;
+        document.getElementById('r-height').value = activeRoom.height;
+        document.getElementById('r-nopick').checked = activeRoom.noPick;
+        document.getElementById('r-nopickmsg').value = activeRoom.noPickMsg;
+        document.getElementById('nopick-msg-row').style.display = activeRoom.noPick ? 'block' : 'none';
         refreshLists(); draw();
     }
 
@@ -514,22 +601,130 @@
             `<div class="list-item" onclick="openDetailModal(${i})"><div style="overflow:hidden; max-width:220px;"><span style="color:var(--accent); font-weight:bold; margin-right:5px; font-size:0.7rem;">[${d.type.toUpperCase()}]</span><h4 style="display:inline">${d.keywords}</h4></div><button class="btn-red btn-sm" onclick="event.stopPropagation(); activeRoom.details.splice(${i},1);refreshLists()">X</button></div>`
         ).join('');
 
-        document.getElementById('room-obj-list').innerHTML = activeRoom.objects.map((oid,i) => {
-            const o = objectLibrary.find(x=>x.id==oid);
-            return o ? `<div class="list-item"><span>${o.short}</span><button class="btn-red btn-sm" onclick="activeRoom.objects.splice(${i},1);refreshLists()">X</button></div>` : '';
+        document.getElementById('room-obj-list').innerHTML = activeRoom.objects.map((entry,i) => {
+            const o = objectLibrary.find(x=>x.id==entry.id);
+            return o ? `<div class="list-item" style="cursor:default; flex-direction:column; align-items:stretch;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="pointer-events:none;">${o.short}</span>
+                    <button class="btn-red btn-sm" onclick="activeRoom.objects.splice(${i},1);refreshLists()">X</button>
+                </div>
+                <input type="text" placeholder="Reset message (optional)" value="${entry.msg||''}" style="margin-top:4px; margin-bottom:0; font-size:0.75rem;" oninput="activeRoom.objects[${i}].msg=this.value">
+            </div>` : '';
         }).join('');
         document.getElementById('room-obj-select').innerHTML = objectLibrary.map(o => `<option value="${o.id}">${o.short}</option>`).join('');
         document.getElementById('global-obj-list').innerHTML = objectLibrary.map((o,i) => `<div class="list-item" onclick="openObjectModal(${i})"><div><h4>${o.idName}</h4><span>${o.type}</span></div><button class="btn-red btn-sm" onclick="event.stopPropagation(); objectLibrary.splice(${i},1); refreshLists();">X</button></div>`).join('');
         
-        document.getElementById('room-mon-list').innerHTML = activeRoom.monsters.map((mid,i) => {
-            const m = monsterLibrary.find(x=>x.id==mid);
-            return m ? `<div class="list-item"><span>${m.short}</span><button class="btn-red btn-sm" onclick="activeRoom.monsters.splice(${i},1);refreshLists()">X</button></div>` : '';
+        document.getElementById('room-mon-list').innerHTML = activeRoom.monsters.map((entry,i) => {
+            const m = monsterLibrary.find(x=>x.id==entry.id);
+            return m ? `<div class="list-item" style="cursor:default; flex-direction:column; align-items:stretch;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="pointer-events:none;">${m.short}</span>
+                    <button class="btn-red btn-sm" onclick="activeRoom.monsters.splice(${i},1);refreshLists()">X</button>
+                </div>
+                <input type="text" placeholder="Reset message (optional)" value="${entry.msg||''}" style="margin-top:4px; margin-bottom:0; font-size:0.75rem;" oninput="activeRoom.monsters[${i}].msg=this.value">
+            </div>` : '';
         }).join('');
         document.getElementById('room-mon-select').innerHTML = monsterLibrary.map(m => `<option value="${m.id}">${m.short}</option>`).join('');
-        document.getElementById('global-mon-list').innerHTML = monsterLibrary.map((m,i) => `<div class="list-item" onclick="openMonsterModal(${i})"><div><h4>${m.short}</h4><span>Lvl Adj: ${m.levelAdj||0} ${m.race}</span></div><button class="btn-red btn-sm" onclick="event.stopPropagation(); monsterLibrary.splice(${i},1); refreshLists();">X</button></div>`).join('');
+        document.getElementById('global-mon-list').innerHTML = monsterLibrary.map((m,i) => `<div class="list-item" onclick="openMonsterModal(${i})"><div><h4>${m.short}</h4><span>Lvl Adj: ${m.levelAdj||0} ${m.race}${m.isMount?' [Mount]':''}</span></div><button class="btn-red btn-sm" onclick="event.stopPropagation(); monsterLibrary.splice(${i},1); refreshLists();">X</button></div>`).join('');
+
+        renderSpecialFeatures();
     }
 
-    function syncRoom() { activeRoom.name = document.getElementById('r-name').value; activeRoom.longDesc = document.getElementById('r-long').value; activeRoom.terrain = document.getElementById('r-terrain').value; draw(); }
+    /* --- SPECIAL ROOM FEATURES (Atmos / Fishing / Stable) --- */
+    function toggleFeature(key, checked) { activeRoom[key].active = checked; renderSpecialFeatures(); }
+
+    function addAtmosMsg() {
+        const el = document.getElementById('atmos-new-msg');
+        const v = el.value.trim();
+        if(v) { activeRoom.atmos.messages.push(v); renderSpecialFeatures(); }
+    }
+    function removeAtmosMsg(i) { activeRoom.atmos.messages.splice(i,1); renderSpecialFeatures(); }
+
+    function addFish() {
+        const n = document.getElementById('fish-name').value.trim();
+        const s = parseInt(document.getElementById('fish-strength').value) || 1;
+        if(n) { activeRoom.fishing.fish.push({name:n, strength:s}); renderSpecialFeatures(); }
+    }
+    function removeFish(i) { activeRoom.fishing.fish.splice(i,1); renderSpecialFeatures(); }
+
+    function addStableHorse() {
+        const v = document.getElementById('stable-horse-sel').value;
+        if(v) { activeRoom.stable.horses.push(v); renderSpecialFeatures(); }
+    }
+    function removeStableHorse(i) { activeRoom.stable.horses.splice(i,1); renderSpecialFeatures(); }
+
+    function renderSpecialFeatures() {
+        if(!activeRoom) return;
+        const container = document.getElementById('special-features');
+        if(!container) return;
+        const a = activeRoom.atmos, f = activeRoom.fishing, s = activeRoom.stable;
+
+        let atmosMsgs = a.messages.map((m,i) => `<span class="tag-pill">${m} <span class="remove" onclick="removeAtmosMsg(${i})">x</span></span>`).join('');
+        let atmosHTML = `
+            <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                <label style="margin-top:0; display:flex; align-items:center; gap:6px;"><input type="checkbox" style="width:auto; margin:0;" ${a.active?'checked':''} onchange="toggleFeature('atmos', this.checked)"> Atmospheric Messages</label>
+                <div id="atmos-opts" style="display:${a.active?'block':'none'}; margin-top:8px;">
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1"><label>Chance (per 20s)</label><input type="number" value="${a.chance}" oninput="activeRoom.atmos.chance=parseInt(this.value)||0"></div>
+                        <div style="flex:1"><label style="display:flex; align-items:center; gap:6px; margin-top:22px;"><input type="checkbox" style="width:auto; margin:0;" ${a.sequential?'checked':''} onchange="activeRoom.atmos.sequential=this.checked"> Sequential (not random)</label></div>
+                    </div>
+                    <label>Add Message</label>
+                    <div style="display:flex; gap:5px;"><input type="text" id="atmos-new-msg" placeholder="A gust of wind swirls around you."><button class="dir-btn" onclick="addAtmosMsg()">+</button></div>
+                    <div style="margin-top:5px;">${atmosMsgs || '<span style="color:#666; font-size:0.8rem;">No messages yet.</span>'}</div>
+                </div>
+            </div>`;
+
+        let fishRows = f.fish.map((fi,i) => `<div class="exit-row"><span style="flex:1">${fi.name}</span><span style="width:50px; text-align:right;">${fi.strength}</span><button class="btn-red btn-sm" onclick="removeFish(${i})">X</button></div>`).join('');
+        let fishHTML = `
+            <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                <label style="margin-top:0; display:flex; align-items:center; gap:6px;"><input type="checkbox" style="width:auto; margin:0;" ${f.active?'checked':''} onchange="toggleFeature('fishing', this.checked)"> Fishing Spot</label>
+                <div id="fishing-opts" style="display:${f.active?'block':'none'}; margin-top:8px;">
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1"><label>Max Fishers</label><input type="number" value="${f.maxFishing}" oninput="activeRoom.fishing.maxFishing=parseInt(this.value)||1"></div>
+                        <div style="flex:1"><label>Bite Chance (1-20)</label><input type="number" value="${f.chance}" oninput="activeRoom.fishing.chance=parseInt(this.value)||1"></div>
+                        <div style="flex:1"><label>Max Catch/Reset</label><input type="number" value="${f.maxCatch}" oninput="activeRoom.fishing.maxCatch=parseInt(this.value)||1"></div>
+                    </div>
+                    <label>Custom Fish (optional — default fish used if none added)</label>
+                    <div style="display:flex; gap:5px;"><input type="text" id="fish-name" placeholder="Fish name" style="flex:2"><input type="number" id="fish-strength" placeholder="Strength" style="flex:1"><button class="dir-btn" onclick="addFish()">+</button></div>
+                    <div style="margin-top:5px;">${fishRows}</div>
+                </div>
+            </div>`;
+
+        const mounts = monsterLibrary.filter(m => m.isMount);
+        let stableOpts = mounts.map(m => `<option value="${m.id}">${m.short}</option>`).join('');
+        let stableList = s.horses.map((mid,i) => { const m = monsterLibrary.find(x=>x.id==mid); return m ? `<span class="tag-pill">${m.short} <span class="remove" onclick="removeStableHorse(${i})">x</span></span>` : ''; }).join('');
+        let stableHTML = `
+            <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                <label style="margin-top:0; display:flex; align-items:center; gap:6px;"><input type="checkbox" style="width:auto; margin:0;" ${s.active?'checked':''} onchange="toggleFeature('stable', this.checked)"> Stable</label>
+                <div id="stable-opts" style="display:${s.active?'block':'none'}; margin-top:8px;">
+                    <label>Horses (mark a monster "Is Mount" in the Monster Library first)</label>
+                    ${mounts.length ? `<div style="display:flex; gap:5px;"><select id="stable-horse-sel">${stableOpts}</select><button class="dir-btn" onclick="addStableHorse()">+</button></div>` : `<input disabled style="background:#222; border:none;" placeholder="No mounts defined yet">`}
+                    <div style="margin-top:5px;">${stableList}</div>
+                    <div style="display:flex; gap:10px; margin-top:8px;">
+                        <div style="flex:1"><label>Currency</label><input type="text" value="${s.currency}" placeholder="gold" oninput="activeRoom.stable.currency=this.value"></div>
+                        <div style="flex:1"><label>Allowed (comma list)</label><input type="text" value="${s.allowed}" oninput="activeRoom.stable.allowed=this.value"></div>
+                        <div style="flex:1"><label>Disallowed (comma list)</label><input type="text" value="${s.disallowed}" oninput="activeRoom.stable.disallowed=this.value"></div>
+                    </div>
+                </div>
+            </div>`;
+
+        container.innerHTML = atmosHTML + fishHTML + stableHTML;
+    }
+
+    function syncRoom() {
+        activeRoom.name = document.getElementById('r-name').value;
+        activeRoom.longDesc = document.getElementById('r-long').value;
+        activeRoom.terrain = document.getElementById('r-terrain').value;
+        activeRoom.path = parseInt(document.getElementById('r-path').value) || 0;
+        activeRoom.light = parseInt(document.getElementById('r-light').value) || 0;
+        activeRoom.nightLight = document.getElementById('r-nightlight').value;
+        activeRoom.combatModifier = parseInt(document.getElementById('r-combatmod').value) || 0;
+        activeRoom.height = parseInt(document.getElementById('r-height').value) || 0;
+        activeRoom.noPick = document.getElementById('r-nopick').checked;
+        activeRoom.noPickMsg = document.getElementById('r-nopickmsg').value;
+        document.getElementById('nopick-msg-row').style.display = activeRoom.noPick ? 'block' : 'none';
+        draw();
+    }
     
     function openModal(title) { document.getElementById('modal-overlay').style.display = 'flex'; document.getElementById('modal-title').innerText = title; }
     function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; refreshLists(); draw(); }
@@ -542,20 +737,57 @@
 
     function openDoorModal(fromId, toId) {
         currentEditLink = links.find(l => (l.from == fromId && l.to == toId));
-        if(!currentEditLink.door) currentEditLink.door = { active: false, id: "door", state: "closed", key: "" };
+        if(!currentEditLink.door) currentEditLink.door = { active: false };
+        migrateLink(currentEditLink);
         const d = currentEditLink.door; openModal("Edit Door");
+
+        const keyOptions = objectLibrary.filter(o => o.type === 'key').map(o => `<option value="${o.id}" ${d.keyObjId==o.id?'selected':''}>${o.short}</option>`).join('');
+
         document.getElementById('modal-body').innerHTML = `
             <label>Has Door?</label><select id="door-active" onchange="updateDoor('active', this.value === 'true')"><option value="false" ${!d.active?'selected':''}>No</option><option value="true" ${d.active?'selected':''}>Yes</option></select>
-            <div id="door-opts" style="display:${d.active?'block':'none'}"><label>Door ID</label><input type="text" value="${d.id}" oninput="updateDoor('id', this.value)"><label>State</label><select onchange="updateDoor('state', this.value)"><option value="open" ${d.state==='open'?'selected':''}>Open</option><option value="closed" ${d.state==='closed'?'selected':''}>Closed</option><option value="locked" ${d.state==='locked'?'selected':''}>Locked</option></select><label>Key ID</label><input type="text" value="${d.key}" oninput="updateDoor('key', this.value)"></div>`;
+            <div id="door-opts" style="display:${d.active?'block':'none'}">
+                <label>Door ID</label><input type="text" value="${d.id}" oninput="updateDoor('id', this.value)">
+                <label>State</label><select onchange="updateDoor('state', this.value)"><option value="open" ${d.state==='open'?'selected':''}>Open</option><option value="closed" ${d.state==='closed'?'selected':''}>Closed</option><option value="locked" ${d.state==='locked'?'selected':''}>Locked</option></select>
+                <label>Key</label>
+                <select onchange="selectDoorKey(this.value)">
+                    <option value="" ${!d.keyObjId?'selected':''}>No Key</option>
+                    ${keyOptions}
+                    <option value="__new__">+ Create New Key...</option>
+                </select>
+                <label style="display:flex; align-items:center; gap:6px; margin-top:10px;"><input type="checkbox" style="width:auto; margin:0;" ${d.concealed?'checked':''} onchange="updateDoor('concealed', this.checked)"> Concealed (exit hidden while closed)</label>
+                <details style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                    <summary style="font-size:0.7rem; color:#888; text-transform:uppercase; font-weight:700; cursor:pointer; user-select:none;">Custom Messages (optional)</summary>
+                    <div style="margin-top:8px;">
+                        <label>On Open</label><input type="text" value="${d.msgOpen}" oninput="updateDoor('msgOpen', this.value)">
+                        <label>On Close</label><input type="text" value="${d.msgClose}" oninput="updateDoor('msgClose', this.value)">
+                        <label>On Lock</label><input type="text" value="${d.msgLock}" oninput="updateDoor('msgLock', this.value)">
+                        <label>On Unlock</label><input type="text" value="${d.msgUnlock}" oninput="updateDoor('msgUnlock', this.value)">
+                    </div>
+                </details>
+            </div>`;
     }
     function updateDoor(key, val) { currentEditLink.door[key] = val; if(key === 'active') document.getElementById('door-opts').style.display = val ? 'block' : 'none'; }
+
+    function selectDoorKey(val) {
+        if(val === '__new__') {
+            const base = currentEditLink.door.id || 'door';
+            createObjectDef(base + " key", "a " + base + " key", "key", "");
+            const obj = objectLibrary[objectLibrary.length - 1];
+            obj.keyId = makeSafe(base + "_key");
+            currentEditLink.door.keyObjId = obj.id;
+        } else {
+            currentEditLink.door.keyObjId = val;
+        }
+        openDoorModal(currentEditLink.from, currentEditLink.to);
+        refreshLists();
+    }
 
     function openDetailModal(idx) {
         currentEditType = 'detail'; currentEditId = idx;
         if(idx === -1) { activeRoom.details.push({ type: "look", keywords: "default", desc: "It reads: Beware." }); currentEditId = activeRoom.details.length - 1; }
         const d = activeRoom.details[currentEditId]; openModal("Edit Detail / Sense");
         document.getElementById('modal-body').innerHTML = `
-            <label>Type</label><select onchange="activeRoom.details[currentEditId].type = this.value"><option value="look" ${d.type==='look'?'selected':''}>Look (Item)</option><option value="listen" ${d.type==='listen'?'selected':''}>Listen (Sound)</option><option value="smell" ${d.type==='smell'?'selected':''}>Smell (Scent)</option></select>
+            <label>Type</label><select onchange="activeRoom.details[currentEditId].type = this.value"><option value="look" ${d.type==='look'?'selected':''}>Look (Item)</option><option value="listen" ${d.type==='listen'?'selected':''}>Listen (Sound)</option><option value="smell" ${d.type==='smell'?'selected':''}>Smell (Scent)</option><option value="search" ${d.type==='search'?'selected':''}>Search</option></select>
             <label>Keywords</label><input type="text" value="${d.keywords}" oninput="activeRoom.details[currentEditId].keywords = this.value"><label>Description</label><textarea rows="6" oninput="activeRoom.details[currentEditId].desc = this.value">${d.desc}</textarea>`;
     }
 
@@ -606,23 +838,8 @@
         if(m.speechOut === undefined) m.speechOut = "";
         if(m.speechIn === undefined) m.speechIn = "";
         if(m.speechChance === undefined) m.speechChance = 5;
-        if(m.speechLang === undefined) m.speechLang = "farsi";
-        if(m.secondClass === undefined) m.secondClass = "None";
-        if(m.aggressive === undefined) m.aggressive = 0;
-        if(m.wimpy === undefined) m.wimpy = "";
-        if(m.wimpyDir === undefined) m.wimpyDir = "";
-        if(m.spellChance === undefined) m.spellChance = 5;
-        if(m.languages === undefined) m.languages = [];
-        if(m.langProf === undefined) m.langProf = [];
-        if(m.damageType === undefined) m.damageType = [];
-        if(m.aquatic === undefined) m.aquatic = false;
-        if(m.mood === undefined) m.mood = "";
-        if(m.noSteal === undefined) m.noSteal = {mode:"off", message:""};
-        if(m.band === undefined) m.band = "";
-        if(m.party === undefined) m.party = "";
-        if(m.resistances === undefined) m.resistances = [];
-        if(m.dieMessage === undefined) m.dieMessage = "";
-        if(m.undeadType === undefined) m.undeadType = "none";
+        if(m.speechLang === undefined) m.speechLang = "common";
+        if(m.isMount === undefined) m.isMount = false;
 
         openModal("Edit Monster");
         const alignLabel = getAlignLabel(m.alignment);
@@ -647,69 +864,6 @@
         let spellList = m.spells.map((s, i) => {
             return `<span class="tag-pill">${s} <span class="remove" onclick="removeMonSpell(${i})">x</span></span>`;
         }).join('');
-
-let advancedUI = `
-            <details style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
-                <summary style="font-size:0.7rem; color:#888; text-transform:uppercase; font-weight:700; cursor:pointer; user-select:none; outline:none;">
-                    Advanced Attributes <span style="font-size:0.6rem; font-weight:normal; text-transform:none; color:#555;">(Click to expand)</span>
-                </summary>
-                <div style="margin-top:10px;">
-                    <div style="display:flex; gap:10px;">
-                        <div style="flex:1"><label style="margin-top:0;">Second Guild</label><select onchange="updateMon('secondClass', this.value)">${Object.keys(CLASS_SPELLS).map(c=>`<option ${m.secondClass===c?'selected':''}>${c}</option>`)}</select></div>
-                        <div style="flex:1"><label style="margin-top:0;">Undead Type</label><select onchange="updateMon('undeadType', this.value)"><option value="none" ${m.undeadType==='none'?'selected':''}>None</option><option value="undead" ${m.undeadType==='undead'?'selected':''}>Undead</option><option value="skeleton" ${m.undeadType==='skeleton'?'selected':''}>Skeleton</option><option value="ghoul" ${m.undeadType==='ghoul'?'selected':''}>Ghoul</option></select></div>
-                    </div>
-
-                    <div style="display:flex; gap:10px;">
-                        <div style="flex:1"><label style="margin-top:0;">Band (shared aggro)</label><input type="text" value="${m.band}" oninput="updateMon('band', this.value)" placeholder="e.g. Killer Gibbons Ahoy"></div>
-                        <div style="flex:1"><label style="margin-top:0;">Party (ranks)</label><input type="text" value="${m.party}" oninput="updateMon('party', this.value)" placeholder="e.g. Larnens party"></div>
-                    </div>
-
-                    <div style="display:flex; gap:10px;">
-                        <div style="flex:1"><label style="margin-top:0;">Aggressive Cha Threshold</label><input type="number" value="${m.aggressive}" oninput="updateMon('aggressive', this.value)"></div>
-                        <div style="flex:1"><label style="margin-top:0;">Spell Chance (%/round)</label><input type="number" value="${m.spellChance}" oninput="updateMon('spellChance', this.value)"></div>
-                    </div>
-                    <div style="display:flex; gap:10px;">
-                        <div style="flex:1"><label style="margin-top:0;">Wimpy (%)</label><input type="number" value="${m.wimpy}" oninput="updateMon('wimpy', this.value)"></div>
-                        <div style="flex:1"><label style="margin-top:0;">Wimpy Direction</label><input type="text" value="${m.wimpyDir}" oninput="updateMon('wimpyDir', this.value)" placeholder="e.g. out"></div>
-                    </div>
-
-                    <label style="margin-top:10px;">Mood</label><input type="text" value="${m.mood}" oninput="updateMon('mood', this.value)" placeholder="e.g. happy">
-
-                    <label style="display:inline-flex; align-items:center; flex-direction:row; gap:5px; margin-top:10px; color:#ccc;">
-                        <input type="checkbox" ${m.aquatic?'checked':''} onchange="updateMon('aquatic', this.checked)" style="width:auto; margin:0;"> Aquatic (can breathe underwater)
-                    </label>
-
-                    <label style="margin-top:10px;">No Steal</label>
-                    <select onchange="updateNoSteal(this.value)">
-                        <option value="off" ${m.noSteal.mode==='off'?'selected':''}>Off (stealable)</option>
-                        <option value="default" ${m.noSteal.mode==='default'?'selected':''}>Blocked (default message)</option>
-                        <option value="message" ${m.noSteal.mode==='message'?'selected':''}>Blocked (custom message)</option>
-                    </select>
-                    <div id="nosteal-msg-wrap" style="display:${m.noSteal.mode==='message'?'block':'none'}">
-                        <input type="text" value="${m.noSteal.message}" oninput="monsterLibrary[currentEditId].noSteal.message=this.value" placeholder="Message shown to thief">
-                    </div>
-
-                    <label style="margin-top:10px;">Death Message (overrides default)</label>
-                    <textarea rows="2" oninput="updateMon('dieMessage', this.value)" placeholder="The orc crumbles to the ground, bleeding profusely.">${m.dieMessage}</textarea>
-
-                    <label style="margin-top:10px;">Natural Damage Type(s) <span style="font-weight:normal; text-transform:none; color:#555;">(unarmed hits)</span></label>
-                    <div style="display:flex; gap:5px;"><input type="text" id="mon-dmgtype-input" placeholder="e.g. fire"><button class="dir-btn" onclick="addMonDamageType()">+</button></div>
-                    <div style="margin-top:5px;">${m.damageType.map((d,i)=>`<span class="tag-pill">${d} <span class="remove" onclick="removeMonDamageType(${i})">x</span></span>`).join('')}</div>
-
-                    <label style="margin-top:10px;">Resistances <span style="font-weight:normal; text-transform:none; color:#555;">(type / % — avoid exactly 100, use 101 for near-immune)</span></label>
-                    <div style="display:flex; gap:5px;"><input type="text" id="mon-resist-type" placeholder="e.g. fire" style="flex:2"><input type="number" id="mon-resist-pct" placeholder="%" style="flex:1"><button class="dir-btn" onclick="addMonResist()">+</button></div>
-                    <div style="margin-top:5px;">${m.resistances.map((r,i)=>`<span class="tag-pill">${r.type}: ${r.pct}% <span class="remove" onclick="removeMonResist(${i})">x</span></span>`).join('')}</div>
-
-                    <label style="margin-top:10px;">Fluent Languages</label>
-                    <div style="display:flex; gap:5px;"><input type="text" id="mon-lang-input" placeholder="e.g. elephantish"><button class="dir-btn" onclick="addMonLang()">+</button></div>
-                    <div style="margin-top:5px;">${m.languages.map((l,i)=>`<span class="tag-pill">${l} <span class="remove" onclick="removeMonLang(${i})">x</span></span>`).join('')}</div>
-
-                    <label style="margin-top:10px;">Partial Language Fluency <span style="font-weight:normal; text-transform:none; color:#555;">(lang / 1-10)</span></label>
-                    <div style="display:flex; gap:5px;"><input type="text" id="mon-langprof-name" placeholder="e.g. farsi" style="flex:2"><input type="number" id="mon-langprof-val" placeholder="1-10" min="1" max="10" style="flex:1"><button class="dir-btn" onclick="addMonLangProf()">+</button></div>
-                    <div style="margin-top:5px;">${m.langProf.map((p,i)=>`<span class="tag-pill">${p.lang}: ${p.prof} <span class="remove" onclick="removeMonLangProf(${i})">x</span></span>`).join('')}</div>
-                </div>
-            </details>
-        `;
 
 let mechanicsUI = `
             <details style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;" ${m.mechanics.length > 0 ? 'open' : ''}>
@@ -804,6 +958,7 @@ let mechanicsUI = `
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;"><div style="flex:1"><label>ID Name</label><input type="text" value="${m.idName}" oninput="updateMon('idName', this.value)"></div><div style="flex:1"><label>Short Desc</label><input type="text" value="${m.short}" oninput="updateMon('short', this.value)"></div></div>
             <div style="display:flex; gap:10px;"><div style="flex:1"><label>Lvl Adj</label><input type="number" value="${m.levelAdj}" oninput="updateMon('levelAdj', this.value)"></div><div style="flex:1"><label>Race</label><select onchange="updateMon('race',this.value)">${['Arachnid','Artrell','Aurin','Basilisk','Bat','Bee','Beetle','Beholder','Bird','Carrion-crawler','Centaur','Centipede','Chimera','Cockatrice','Crocodile','Crustacean','Dagon','Drider','Drow','Dwarf','Elf','Equine','Equine-winged','Faerie','Fish','Frog','Giant','Gnome','Half-Elf','Halfling','Half-Orc','Human','Humanoid-tail','Insectoid','nsectoid-winged','Lizardman','Merperson','Null','Nymph','Octopus','Otyugh','Quadruped','Quadruped-winged','Ray','Reptile','Reptile-winged','Satyr','Slime','Snakeman','Snae-winged','Turtle','Worm'].map(r=>`<option ${m.race===r?'selected':''}>${r}</option>`)}</select></div><div style="flex:1"><label>Class</label><select onchange="updateMon('class',this.value)">${Object.keys(CLASS_SPELLS).map(c=>`<option ${m.class===c?'selected':''}>${c}</option>`)}</select></div></div>
+            <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="width:auto; margin:0;" ${m.isMount?'checked':''} onchange="updateMon('isMount', this.checked)"> Is Mount (usable in Stables)</label>
             
             <div style="display:flex; gap:10px;">
                 <div style="flex:1">
@@ -822,8 +977,6 @@ let mechanicsUI = `
                 <div style="margin-top:5px;">${spellList}</div>
             </div>
 
-            ${advancedUI}
-
             ${mechanicsUI}
 
             <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
@@ -840,7 +993,7 @@ let mechanicsUI = `
     }
     
     function createMonsterDef(idName, short, race, cls) { 
-        monsterLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `A ${race.toLowerCase()}.`, race, class: cls, levelAdj: 0, gender: "neuter", alignment: 0, inventory: [], spells: [], mechanics: [], speechOut: "", speechIn: "", speechChance: 5, speechLang: "farsi", secondClass: "None", aggressive: 0, wimpy: "", wimpyDir: "", spellChance: 5, languages: [], langProf: [], damageType: [], aquatic: false, mood: "", noSteal: {mode:"off", message:""}, band: "", party: "", resistances: [], dieMessage: "", undeadType: "none" }); 
+        monsterLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `A ${race.toLowerCase()}.`, race, class: cls, levelAdj: 0, gender: "neuter", alignment: 0, inventory: [], spells: [], mechanics: [], speechOut: "", speechIn: "", speechChance: 5, speechLang: "common" }); 
     }
     function updateAlignUI(val) { val = parseInt(val); monsterLibrary[currentEditId].alignment = val; document.getElementById('align-lbl').innerText = `${getAlignLabel(val)} (${val})`; }
     function updateMon(k,v) { 
@@ -863,35 +1016,9 @@ let mechanicsUI = `
         openMonsterModal(currentEditId); 
     }
 
-    function updateNoSteal(mode) {
-        monsterLibrary[currentEditId].noSteal.mode = mode;
-        const wrap = document.getElementById('nosteal-msg-wrap');
-        if(wrap) wrap.style.display = mode === 'message' ? 'block' : 'none';
-    }
-
-    function addMonDamageType() { const el=document.getElementById('mon-dmgtype-input'); const v=el.value.trim(); if(v){ monsterLibrary[currentEditId].damageType.push(v.toLowerCase()); openMonsterModal(currentEditId); } }
-    function removeMonDamageType(i) { monsterLibrary[currentEditId].damageType.splice(i,1); openMonsterModal(currentEditId); }
-
-    function addMonResist() {
-        const type = document.getElementById('mon-resist-type').value.trim().toLowerCase();
-        const pct = parseInt(document.getElementById('mon-resist-pct').value);
-        if(type && !isNaN(pct)) { monsterLibrary[currentEditId].resistances.push({type, pct}); openMonsterModal(currentEditId); }
-    }
-    function removeMonResist(i) { monsterLibrary[currentEditId].resistances.splice(i,1); openMonsterModal(currentEditId); }
-
-    function addMonLang() { const el=document.getElementById('mon-lang-input'); const v=el.value.trim(); if(v){ monsterLibrary[currentEditId].languages.push(v.toLowerCase()); openMonsterModal(currentEditId); } }
-    function removeMonLang(i) { monsterLibrary[currentEditId].languages.splice(i,1); openMonsterModal(currentEditId); }
-
-    function addMonLangProf() {
-        const lang = document.getElementById('mon-langprof-name').value.trim().toLowerCase();
-        const prof = parseInt(document.getElementById('mon-langprof-val').value) || 1;
-        if(lang) { monsterLibrary[currentEditId].langProf.push({lang, prof}); openMonsterModal(currentEditId); }
-    }
-    function removeMonLangProf(i) { monsterLibrary[currentEditId].langProf.splice(i,1); openMonsterModal(currentEditId); }
-
     function addMonInv() { const v=document.getElementById('mon-inv-sel').value; if(v){ monsterLibrary[currentEditId].inventory.push(v); openMonsterModal(currentEditId); } }
     function removeMonInv(i) { monsterLibrary[currentEditId].inventory.splice(i,1); openMonsterModal(currentEditId); }
-    function addMonToRoom() { const v=document.getElementById('room-mon-select').value; if(v){activeRoom.monsters.push(v); refreshLists(); draw();} }
+    function addMonToRoom() { const v=document.getElementById('room-mon-select').value; if(v){activeRoom.monsters.push({id:v, msg:""}); refreshLists(); draw();} }
 
     function openObjectModal(idx) {
         currentEditType = 'object'; currentEditId = idx;
@@ -911,7 +1038,7 @@ let mechanicsUI = `
     
     function createObjectDef(idName, short, type, subtype) { objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype, material: "plate", levelAdj: 0, keyId: "" }); }
     function updateObj(k,v) { objectLibrary[currentEditId][k] = v; if(k==='type') { if(v==='weapon') objectLibrary[currentEditId].subtype="blade"; if(v==='armour') { objectLibrary[currentEditId].subtype="helmet"; objectLibrary[currentEditId].material="plate"; } else objectLibrary[currentEditId].subtype=""; } }
-    function addObjToRoom() { const v=document.getElementById('room-obj-select').value; if(v){activeRoom.objects.push(v); refreshLists(); draw();} }
+    function addObjToRoom() { const v=document.getElementById('room-obj-select').value; if(v){activeRoom.objects.push({id:v, msg:""}); refreshLists(); draw();} }
 
     /* --- MAP DRAWING --- */
     function draw() {
@@ -1022,6 +1149,8 @@ let mechanicsUI = `
     }
 
     async function exportLPC() {
+        rooms.forEach(migrateRoom);
+        links.forEach(migrateLink);
         const zip = new JSZip();
         const area = exportSettings.areaName || "area";
         const path = exportSettings.basePath.replace(/\/$/, '') + '/';
@@ -1050,10 +1179,6 @@ let mechanicsUI = `
 
             f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", o.short)}\n${formatLPC("set_long", o.long)}\n    set_level(${getLevelStr(o.levelAdj)});\n${xtra}\n}`);
         });
-
-        const autoKeys = new Set();
-        links.forEach(l => { if(l.door && l.door.active && l.door.key) { if(!objectLibrary.some(o => o.keyId === l.door.key)) autoKeys.add(l.door.key); } });
-        autoKeys.forEach(k => { f.folder("obj").file(makeSafe(k)+".c", `#include "../include/include.h"\ninherit KEY;\nvoid create() {\n    ::create();\n    set_name("${k}");\n    set_id(({"${k}", "key"}));\n    set_key_id("${k}");\n    set_short("a ${k}");\n    set_long("It is a ${k}, used to unlock something.");\n    set_level(1);\n}`); });
 
         const monMap = {};
         monsterLibrary.forEach(m => {
@@ -1096,55 +1221,14 @@ let mechanicsUI = `
                 });
             }
 
-            // --- Advanced Attributes ---
-            let secondClsCode = (m.secondClass && m.secondClass.toLowerCase() !== "none") ? `    set_second_class("${m.secondClass.toLowerCase()}");\n` : "";
-            let spellChanceCode = (m.spells && m.spells.length > 0) ? `    set_spell_chance(${parseInt(m.spellChance) || 5});\n` : "";
-            let aggroCode = (parseInt(m.aggressive) > 0) ? `    set_aggressive(${parseInt(m.aggressive)});\n` : "";
-
-            let wimpyCode = "";
-            if(m.wimpy !== "" && m.wimpy !== undefined && m.wimpy !== null && !isNaN(parseInt(m.wimpy))) wimpyCode += `    set_wimpy(${parseInt(m.wimpy)});\n`;
-            if(m.wimpyDir) wimpyCode += `    set_wimpydir("${m.wimpyDir}");\n`;
-
-            let moodCode = m.mood ? `    set_mood("${m.mood}");\n` : "";
-            let aquaticCode = m.aquatic ? `    set_aquatic(1);\n` : "";
-
-            let noStealCode = "";
-            if(m.noSteal && m.noSteal.mode === 'default') noStealCode = `    set("no steal",1);\n`;
-            else if(m.noSteal && m.noSteal.mode === 'message' && m.noSteal.message) noStealCode = `    set("no steal","${m.noSteal.message}");\n`;
-
-            let bandPartyCode = "";
-            if(m.band) bandPartyCode += `    set_band("${m.band}");\n`;
-            if(m.party) bandPartyCode += `    set_party("${m.party}");\n`;
-
-            let dmgTypeCode = "";
-            if(m.damageType && m.damageType.length === 1) dmgTypeCode = `    set("damage type","${m.damageType[0]}");\n`;
-            else if(m.damageType && m.damageType.length > 1) dmgTypeCode = `    set("damage type",({"${m.damageType.join('","')}"}));\n`;
-
-            let resistCode = "";
-            if(m.resistances && m.resistances.length > 0) {
-                m.resistances.forEach(r => { resistCode += `    set_resistance(DAMAGE_${r.type.toUpperCase().replace(/\s+/g,'_')},${r.pct});\n`; });
-            }
-
-            let langCode = "";
-            if(m.languages && m.languages.length > 0) langCode += `    set_languages(({"${m.languages.join('","')}"}));\n`;
-            if(m.langProf && m.langProf.length > 0) { m.langProf.forEach(p => { langCode += `    set_lang_prof("${p.lang}",${p.prof});\n`; }); }
-
-            let dieCode = m.dieMessage ? `    set_die("${m.dieMessage}");\n` : "";
-
-            let needsDamageInclude = (m.resistances && m.resistances.length > 0);
-            let inheritLine = "inherit MONSTER;";
-            if(m.undeadType === 'undead') inheritLine = 'inherit STD_MON("undead");';
-            else if(m.undeadType === 'skeleton') inheritLine = 'inherit STD_MON("skeleton");';
-            else if(m.undeadType === 'ghoul') inheritLine = 'inherit STD_MON("ghoul");';
-
-            f.folder("mon").file(fname, `#include "../include/include.h"\n${needsDamageInclude ? '#include <damage_types.h>\n' : ''}${inheritLine}\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", m.short)}\n${formatLPC("set_long", m.long)}\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}${secondClsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${spellCode}${spellChanceCode}${aggroCode}${wimpyCode}${moodCode}${aquaticCode}${noStealCode}${bandPartyCode}${dmgTypeCode}${resistCode}${langCode}${dieCode}${speechCode}${mechanicsCode}${gear}}`);
+            f.folder("mon").file(fname, `#include "../include/include.h"\ninherit MONSTER;\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", m.short)}\n${formatLPC("set_long", m.long)}\n    set_level(${getLevelStr(m.levelAdj)});\n    set_race("${m.race.toLowerCase()}");\n${clsCode}    set_gender("${m.gender}");\n    set_alignment(${m.alignment});\n${spellCode}${speechCode}${mechanicsCode}${gear}}`);
         });
 
         const rMap = {}; const names = {};
         rooms.forEach(r => { let n = makeSafe(r.name); names[n] = (names[n]||0) + 1; rMap[r.id] = (names[n]>1 ? `${n}_${names[n]}` : n) + ".c"; });
 
         rooms.forEach(r => {
-            let ex = [], doors = [], mons = [], objs = [], looks = [], listens = [], smells = [];
+            let ex = [], doors = [], mons = [], objs = [], looks = [], listens = [], smells = [], searches = [];
             links.forEach(l => {
                 let tr = null;
                 if(l.from==r.id) tr=rooms.find(x=>x.id==l.to); else if(l.to==r.id) tr=rooms.find(x=>x.id==l.from);
@@ -1156,9 +1240,18 @@ let mechanicsUI = `
                     else { if(tr.x>r.x)d="east"; else if(tr.x<r.x)d="west"; }
                     ex.push(`        "${d}" : ROOMDIR+"${rMap[tr.id].replace('.c','')}"`);
                     if(l.door && l.door.active) {
-                        let k = l.door.key ? `"${l.door.key}"` : "0";
+                        let keyObj = l.door.keyObjId ? objectLibrary.find(o => o.id == l.door.keyObjId) : null;
+                        let k = keyObj ? `"${keyObj.keyId || makeSafe(keyObj.idName.split(',')[0].trim())}"` : "0";
                         let istate = (l.door.state === 'open') ? "ISTATE_OPEN" : (l.door.state === 'locked' ? "ISTATE_LOCKED" : "0");
-                        doors.push(`    set_door("${l.door.id}", "${d}", ${k}${istate!=='0'?', 0, 0, '+istate:''});`);
+                        let extra = "";
+                        if(l.door.concealed || istate !== '0') {
+                            extra = `, 0, ${l.door.concealed ? '1' : '0'}${istate!=='0' ? ', '+istate : ''}`;
+                        }
+                        doors.push(`    set_door("${l.door.id}", "${d}", ${k}${extra});`);
+                        if(l.door.msgOpen) doors.push(`    set_open("${l.door.id}", "${l.door.msgOpen}");`);
+                        if(l.door.msgClose) doors.push(`    set_close("${l.door.id}", "${l.door.msgClose}");`);
+                        if(l.door.msgLock) doors.push(`    set_lock("${l.door.id}", "${l.door.msgLock}");`);
+                        if(l.door.msgUnlock) doors.push(`    set_unlock("${l.door.id}", "${l.door.msgUnlock}");`);
                     }
                 }
             });
@@ -1167,17 +1260,68 @@ let mechanicsUI = `
                 if(det.type === 'look') looks.push(`        ({${keys}}) : "${det.desc}"`);
                 else if(det.type === 'listen') listens.push(`    set_listen(({${keys}}), "${det.desc}");`);
                 else if(det.type === 'smell') smells.push(`    set_smell(({${keys}}), "${det.desc}");`);
+                else if(det.type === 'search') searches.push(`    set_search(({${keys}}), "${det.desc}");`);
             });
             
-            r.monsters.forEach(mid => { if(monMap[mid]) mons.push(`    add_object(MONDIR+"${monMap[mid]}", "", RT_TRACK);`); });
-            r.objects.forEach(id => { if(objMap[id]) objs.push(`    add_object(OBJDIR+"${objMap[id]}", "", RT_TRACK);`); });
+            r.monsters.forEach(entry => { if(monMap[entry.id]) mons.push(`    add_object(MONDIR+"${monMap[entry.id]}", "${entry.msg||''}", RT_TRACK);`); });
+            r.objects.forEach(entry => { if(objMap[entry.id]) objs.push(`    add_object(OBJDIR+"${objMap[entry.id]}", "${entry.msg||''}", RT_TRACK);`); });
 
             let exCode = ex.length ? `    set_exits(([\n${ex.join(',\n')}\n    ]));` : "";
             let lookCode = looks.length ? `    set_items(([\n${looks.join(',\n')}\n    ]));` : "";
             let terrainCode = (r.terrain && r.terrain !== "indoor") ? `    set_terrain("${r.terrain}");\n` : "";
+            let pathCode = (r.path && r.path > 0) ? `    set_path(${r.path});\n` : "";
+            let lightCode = "";
+            if(r.light !== undefined && r.light !== 0) lightCode += `    set_light(${r.light});\n`;
+            if(r.nightLight !== undefined && r.nightLight !== "" && r.nightLight !== null) lightCode += `    set("night light",${r.nightLight});\n`;
+            let combatCode = r.combatModifier ? `    set("combat modifier",${r.combatModifier});\n` : "";
+            let heightCode = r.height ? `    set_height(${r.height});\n` : "";
+            let noPickCode = r.noPick ? (r.noPickMsg ? `    set("no pick","${r.noPickMsg}");\n` : `    set("no pick",1);\n`) : "";
             let commentBlock = r.comments ? r.comments.split('\n').map(l=>`// ${l}`).join('\n') + "\n" : "";
 
-            f.folder("rooms").file(rMap[r.id], `${commentBlock}#include "../include/include.h"\ninherit ROOM;\nvoid create() {\n    ::create();\n${formatLPC("set_short", r.name)}\n${formatLPC("set_long", r.longDesc)}\n${terrainCode}${lookCode}\n${listens.join('\n')}\n${smells.join('\n')}\n${exCode}\n${doors.join('\n')}\n${mons.join('\n')}\n${objs.join('\n')}\n}`);
+            // --- Atmospherics ---
+            let atmosInherit = "", atmosCode = "", atmosInit = "";
+            if(r.atmos && r.atmos.active && r.atmos.messages.length > 0) {
+                atmosInherit = "\ninherit ATMOS;";
+                let msgsFmt = r.atmos.messages.map(m=>`"${m}"`).join(',\n        ');
+                atmosCode = `    set_atmos(${r.atmos.chance||20}, ({\n        ${msgsFmt}\n    }), ${r.atmos.sequential?1:0});\n`;
+                atmosInit = `\n\nvoid init() {\n    room::init();\n    atmos::init();\n}`;
+            }
+
+            // --- Fishing ---
+            let fishInherit = "", fishCode = "", fishReset = "";
+            if(r.fishing && r.fishing.active) {
+                fishInherit = "\ninherit PIER;";
+                fishCode += `    set_max_fishing(${r.fishing.maxFishing||5});\n`;
+                fishCode += `    set_chance(${r.fishing.chance||4});\n`;
+                fishCode += `    set_max_catch(${r.fishing.maxCatch||5});\n`;
+                if(r.fishing.fish && r.fishing.fish.length > 0) {
+                    let fishMap = r.fishing.fish.map(fi => `"${fi.name}":${fi.strength}`).join(',');
+                    fishCode += `    set_fish(([${fishMap}]));\n`;
+                }
+                fishReset = `\n\nvoid reset() {\n    room::reset();\n    pier::reset();\n}`;
+            }
+
+            // --- Stable ---
+            let stableInherit = "", stableCode = "";
+            if(r.stable && r.stable.active) {
+                stableInherit = "\ninherit STABLE;";
+                let horseFiles = r.stable.horses.map(mid => monMap[mid] ? `MONDIR+"${monMap[mid]}"` : null).filter(Boolean).join(', ');
+                stableCode += `    set_horses(({${horseFiles}}));\n`;
+                if(r.stable.currency) stableCode += `    set_currency("${r.stable.currency}");\n`;
+                if(r.stable.allowed) {
+                    let allowedArr = r.stable.allowed.split(',').map(s=>`"${s.trim()}"`).join(',');
+                    stableCode += `    set_allowed_currencies(({${allowedArr}}));\n`;
+                }
+                if(r.stable.disallowed) {
+                    let disallowedArr = r.stable.disallowed.split(',').map(s=>`"${s.trim()}"`).join(',');
+                    stableCode += `    set_disallowed_currencies(({${disallowedArr}}));\n`;
+                }
+            }
+
+            let inheritLine = `inherit ROOM;${atmosInherit}${fishInherit}${stableInherit}`;
+            let extraFuncs = `${atmosInit}${fishReset}`;
+
+            f.folder("rooms").file(rMap[r.id], `${commentBlock}#include "../include/include.h"\n${inheritLine}\nvoid create() {\n    ::create();\n${formatLPC("set_short", r.name)}\n${formatLPC("set_long", r.longDesc)}\n${terrainCode}${pathCode}${lightCode}${combatCode}${heightCode}${noPickCode}${lookCode}\n${listens.join('\n')}\n${smells.join('\n')}\n${searches.join('\n')}\n${exCode}\n${doors.join('\n')}\n${mons.join('\n')}\n${objs.join('\n')}\n${atmosCode}${fishCode}${stableCode}}${extraFuncs}`);
         });
 
         f.folder("docs").file("map.txt", generateASCIIMap(rMap));
@@ -1205,7 +1349,7 @@ Unique Object Defs: ${objectLibrary.length}
     }
 
     function downloadJSON() { saveAs(new Blob([JSON.stringify({ rooms, links, objectLibrary, monsterLibrary, exportSettings })],{type:'application/json'}), 'mud.json'); }
-    function importData() { let i = document.createElement('input'); i.type='file'; i.onchange=e=>{ let r=new FileReader(); r.onload=ev=>{ let d=JSON.parse(ev.target.result); rooms=d.rooms; links=d.links; objectLibrary=d.objectLibrary||[]; monsterLibrary=d.monsterLibrary||[]; exportSettings=d.exportSettings||exportSettings; activeRoom=rooms[0]; currentZ=activeRoom.z; document.getElementById('area-name').value = exportSettings.areaName; document.getElementById('base-path').value = exportSettings.basePath; document.getElementById('base-level').value = exportSettings.baseLevel; syncUI(); }; r.readAsText(e.target.files[0]); }; i.click(); }
+    function importData() { let i = document.createElement('input'); i.type='file'; i.onchange=e=>{ let r=new FileReader(); r.onload=ev=>{ let d=JSON.parse(ev.target.result); rooms=d.rooms; links=d.links; objectLibrary=d.objectLibrary||[]; monsterLibrary=d.monsterLibrary||[]; exportSettings=d.exportSettings||exportSettings; rooms.forEach(migrateRoom); links.forEach(migrateLink); activeRoom=rooms[0]; currentZ=activeRoom.z; document.getElementById('area-name').value = exportSettings.areaName; document.getElementById('base-path').value = exportSettings.basePath; document.getElementById('base-level').value = exportSettings.baseLevel; syncUI(); }; r.readAsText(e.target.files[0]); }; i.click(); }
 
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 </script>
