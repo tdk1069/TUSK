@@ -96,7 +96,14 @@
         <button class="z-btn" onclick="dig('up')">UP ▲</button>
         <button class="z-btn" onclick="dig('down')">DWN ▼</button>
     </div>
+    <div class="z-btns">
+        <button class="z-btn" onclick="zoomOut()">ZOOM −</button>
+        <button class="z-btn" onclick="zoomReset()" id="zoom-label">100%</button>
+        <button class="z-btn" onclick="zoomIn()">ZOOM +</button>
+    </div>
 </div>
+
+<div id="room-tooltip" style="display:none; position:fixed; background:rgba(26,26,26,0.95); border:1px solid #444; padding:6px 10px; border-radius:4px; font-size:0.8rem; pointer-events:none; z-index:20; color:#fff; max-width:220px;"></div>
 
 <div id="sidebar">
     <div class="tabs">
@@ -223,6 +230,7 @@
     const VALID_WEAPON_TYPES = ["blade", "knife", "projectile", "blunt", "two handed", "polearm", "staff", "whip", "thrown"];
     const VALID_ARMOUR_TYPES = ["helmet", "armour", "cloak", "shield", "gloves", "ring", "boots", "amulet", "barding", "necklace", "circlet", "bracelet", "anklet"];
     const VALID_MATERIALS = ["cloth", "leather", "mail", "plate"];
+    const VALID_CLOTHING_TYPES = ["belt", "wed_ring", "tabard", "accessory", "shirt", "dress", "trousers"];
     const ALIGN_MAP = { 1250: "SAINTLY", 1000: "RIGHTEOUS", 750: "GOOD", 500: "BENEVOLENT", 250: "NICE", 0: "NEUTRAL", "-250": "MEAN", "-500": "MALEVOLENT", "-750": "EVIL", "-1000": "NEFARIOUS", "-1250": "DEMONIC" };
     const ALIGN_KEYS = Object.keys(ALIGN_MAP).map(Number).sort((a,b) => a - b); 
 
@@ -451,6 +459,8 @@
     let currentZ = 0;
     let camera = { x: 0, y: 0 };
     let isPanning = false, lastMouse = { x: 0, y: 0 };
+    let zoom = 1;
+    let draggingRoom = null, dragStartMouse = null, dragOrigin = null, dragMoved = false;
     let exportSettings = { areaName: "new_area", basePath: "/d/domain/new_area/", baseLevel: 5 };
     
     // Modal Context
@@ -493,6 +503,37 @@
     }
 
     /* --- BACKWARD-COMPAT MIGRATION HELPERS --- */
+    function migrateObject(obj) {
+        if(obj.levelAdj === undefined) obj.levelAdj = 0;
+        if(obj.keyId === undefined) obj.keyId = "";
+        if(obj.weightAdj === undefined) obj.weightAdj = 0;
+        if(obj.valueAdj === undefined) obj.valueAdj = 0;
+        if(obj.questItem === undefined) obj.questItem = false;
+        // Weapon-specific
+        if(obj.ac === undefined) obj.ac = 0;
+        if(obj.skillLevel === undefined) obj.skillLevel = 0;
+        if(obj.decayRate === undefined) obj.decayRate = 0;
+        if(obj.poisoned === undefined) obj.poisoned = false;
+        if(obj.poisonAmount === undefined) obj.poisonAmount = 10;
+        if(obj.wieldMsg === undefined) obj.wieldMsg = "";
+        if(obj.unwieldMsg === undefined) obj.unwieldMsg = "";
+        // Armour-specific
+        if(obj.acAdj === undefined) obj.acAdj = 0;
+        if(obj.raceOverride === undefined) obj.raceOverride = "";
+        if(obj.wearMsg === undefined) obj.wearMsg = "";
+        if(obj.removeMsg === undefined) obj.removeMsg = "";
+        // Container/Bag-specific
+        if(obj.maxCapacity === undefined) obj.maxCapacity = 200;
+        if(obj.closeable === undefined) obj.closeable = true;
+        if(obj.startsClosed === undefined) obj.startsClosed = true;
+        if(obj.lockable === undefined) obj.lockable = false;
+        if(obj.contKeyObjId === undefined) obj.contKeyObjId = "";
+        if(obj.startsLocked === undefined) obj.startsLocked = false;
+        if(obj.closedLong === undefined) obj.closedLong = "";
+        if(obj.openString === undefined) obj.openString = "";
+        if(obj.contMsg === undefined) obj.contMsg = "";
+    }
+
     function migrateRoom(r) {
         if(r.light === undefined) r.light = 1;
         if(r.nightLight === undefined) r.nightLight = "";
@@ -540,7 +581,8 @@
         window.addEventListener('resize', resize);
         canvas.addEventListener('mousedown', onDown);
         window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', () => isPanning = false);
+        window.addEventListener('mouseup', onUp);
+        canvas.addEventListener('wheel', onWheel, { passive: false });
         activeRoom = createRoom(0, 0, 0, "The Start");
         createObjectDef("sword", "a rusty sword", "weapon", "blade");
         createMonsterDef("guard", "a guard", "Human", "Fighter"); 
@@ -1023,27 +1065,104 @@ let mechanicsUI = `
     function openObjectModal(idx) {
         currentEditType = 'object'; currentEditId = idx;
         if(idx === -1) { createObjectDef("item", "a new item", "simple", ""); currentEditId = objectLibrary.length - 1; }
-        const obj = objectLibrary[currentEditId]; if(obj.levelAdj === undefined) obj.levelAdj = 0; if(obj.keyId === undefined) obj.keyId = "";
+        const obj = objectLibrary[currentEditId];
+        migrateObject(obj);
         openModal("Edit Object");
         let typeSelect = `<input disabled style="background:#222; border:none;" placeholder="N/A">`;
         if(obj.type === 'weapon') typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_WEAPON_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
         else if(obj.type === 'armour') typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_ARMOUR_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
+        else if(obj.type === 'clothing') typeSelect = `<select onchange="updateObj('subtype', this.value)">${VALID_CLOTHING_TYPES.map(t=>`<option ${obj.subtype===t?'selected':''}>${t}</option>`)}</select>`;
         let matSelect = (obj.type === 'armour') ? `<div style="flex:1"><label>Material</label><select onchange="updateObj('material', this.value)">${VALID_MATERIALS.map(t=>`<option ${obj.material===t?'selected':''}>${t}</option>`)}</select></div>` : "";
         let keyUI = (obj.type === 'key') ? `<div style="background:#222; padding:10px; border:1px solid #444; margin-bottom:10px;"><label>Lock Match ID</label><input type="text" value="${obj.keyId}" oninput="updateObj('keyId', this.value)"></div>` : "";
+
+        // Weapon extras
+        let weaponUI = "";
+        if(obj.type === 'weapon') {
+            weaponUI = `
+            <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1"><label style="margin-top:0;">Hilt AC</label><input type="number" value="${obj.ac}" oninput="updateObj('ac', parseInt(this.value)||0)"></div>
+                    <div style="flex:1"><label style="margin-top:0;">Min Skill Level (0=default)</label><input type="number" value="${obj.skillLevel}" oninput="updateObj('skillLevel', parseInt(this.value)||0)"></div>
+                    <div style="flex:1"><label style="margin-top:0;">Decay Rate (0=default)</label><input type="number" value="${obj.decayRate}" oninput="updateObj('decayRate', parseInt(this.value)||0)"></div>
+                </div>
+                <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="width:auto; margin:0;" ${obj.poisoned?'checked':''} onchange="updateObj('poisoned', this.checked)"> Starts Poisoned</label>
+                ${obj.poisoned ? `<label>Poison Amount</label><input type="number" value="${obj.poisonAmount}" oninput="updateObj('poisonAmount', parseInt(this.value)||1)">` : ''}
+                <label>Message on Wield (optional)</label><input type="text" value="${obj.wieldMsg}" oninput="updateObj('wieldMsg', this.value)">
+                <label>Message on Unwield (optional)</label><input type="text" value="${obj.unwieldMsg}" oninput="updateObj('unwieldMsg', this.value)">
+            </div>`;
+        }
+
+        // Armour extras
+        let armourUI = "";
+        if(obj.type === 'armour') {
+            const raceOpts = ['Arachnid','Artrell','Aurin','Basilisk','Bat','Bee','Beetle','Beholder','Bird','Carrion-crawler','Centaur','Centipede','Chimera','Cockatrice','Crocodile','Crustacean','Dagon','Drider','Drow','Dwarf','Elf','Equine','Equine-winged','Faerie','Fish','Frog','Giant','Gnome','Half-Elf','Halfling','Half-Orc','Human','Humanoid-tail','Insectoid','nsectoid-winged','Lizardman','Merperson','Null','Nymph','Octopus','Otyugh','Quadruped','Quadruped-winged','Ray','Reptile','Reptile-winged','Satyr','Slime','Snakeman','Snae-winged','Turtle','Worm'];
+            armourUI = `
+            <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1"><label style="margin-top:0;">AC Adjustment</label><input type="number" value="${obj.acAdj}" oninput="updateObj('acAdj', parseInt(this.value)||0)"></div>
+                    <div style="flex:1"><label style="margin-top:0;">Race Override (optional)</label><select onchange="updateObj('raceOverride', this.value)"><option value="" ${!obj.raceOverride?'selected':''}>-- default --</option>${raceOpts.map(r=>`<option ${obj.raceOverride===r?'selected':''}>${r}</option>`)}</select></div>
+                </div>
+                <label>Message on Wear (optional)</label><input type="text" value="${obj.wearMsg}" oninput="updateObj('wearMsg', this.value)">
+                <label>Message on Remove (optional)</label><input type="text" value="${obj.removeMsg}" oninput="updateObj('removeMsg', this.value)">
+            </div>`;
+        }
+
+        // Container / Bag extras
+        let containerUI = "";
+        if(obj.type === 'container') {
+            const keyOptions = objectLibrary.filter(o => o.type === 'key' && o.id != obj.id).map(o => `<option value="${o.id}" ${obj.contKeyObjId==o.id?'selected':''}>${o.short}</option>`).join('');
+            containerUI = `
+            <div style="background:#111; padding:8px; border:1px solid #333; margin-top:10px;">
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1"><label style="margin-top:0;">Max Capacity</label><input type="number" value="${obj.maxCapacity}" oninput="updateObj('maxCapacity', parseInt(this.value)||0)"></div>
+                    <div style="flex:1"><label style="display:flex; align-items:center; gap:6px; margin-top:22px;"><input type="checkbox" style="width:auto; margin:0;" ${obj.closeable?'checked':''} onchange="updateObj('closeable', this.checked)"> Closeable</label></div>
+                    <div style="flex:1"><label style="display:flex; align-items:center; gap:6px; margin-top:22px;"><input type="checkbox" style="width:auto; margin:0;" ${obj.startsClosed?'checked':''} onchange="updateObj('startsClosed', this.checked)"> Starts Closed</label></div>
+                </div>
+                <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="width:auto; margin:0;" ${obj.lockable?'checked':''} onchange="updateObj('lockable', this.checked); openObjectModal(currentEditId)"> Lockable (Bag)</label>
+                ${obj.lockable ? `
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1"><label>Opens With</label>${keyOptions ? `<select onchange="updateObj('contKeyObjId', this.value)"><option value="" ${!obj.contKeyObjId?'selected':''}>No Key</option>${keyOptions}</select>` : `<input disabled style="background:#222; border:none;" placeholder="No key objects defined yet">`}</div>
+                    <div style="flex:1"><label style="display:flex; align-items:center; gap:6px; margin-top:22px;"><input type="checkbox" style="width:auto; margin:0;" ${obj.startsLocked?'checked':''} onchange="updateObj('startsLocked', this.checked)"> Starts Locked</label></div>
+                </div>` : ''}
+                <label>Closed Description Suffix (optional)</label><input type="text" value="${obj.closedLong}" oninput="updateObj('closedLong', this.value)">
+                <label>Open Description Suffix (optional)</label><input type="text" value="${obj.openString}" oninput="updateObj('openString', this.value)">
+                <label>"Contains:" Message Override (optional)</label><input type="text" value="${obj.contMsg}" oninput="updateObj('contMsg', this.value)">
+            </div>`;
+        }
+
         document.getElementById('modal-body').innerHTML = `
             <div style="display:flex; gap:10px;"><div style="flex:1"><label>ID</label><input type="text" value="${obj.idName}" oninput="updateObj('idName', this.value)"></div><div style="flex:1"><label>Short</label><input type="text" value="${obj.short}" oninput="updateObj('short', this.value)"></div></div>
-            ${keyUI}<div style="display:flex; gap:10px;"><div style="flex:1"><label>Category</label><select onchange="updateObj('type', this.value); openObjectModal(currentEditId)"><option value="simple" ${obj.type==='simple'?'selected':''}>Simple</option><option value="key" ${obj.type==='key'?'selected':''}>Key</option><option value="weapon" ${obj.type==='weapon'?'selected':''}>Weapon</option><option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option></select></div><div style="flex:1"><label>Type</label>${typeSelect}</div>${matSelect}</div>
-            <div style="display:flex; gap:10px;"><div style="flex:1"><label>Lvl Adj</label><input type="number" value="${obj.levelAdj}" oninput="updateObj('levelAdj', this.value)"></div></div><label>Long Desc</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>`;
+            ${keyUI}<div style="display:flex; gap:10px;"><div style="flex:1"><label>Category</label><select onchange="updateObj('type', this.value); openObjectModal(currentEditId)"><option value="simple" ${obj.type==='simple'?'selected':''}>Simple</option><option value="key" ${obj.type==='key'?'selected':''}>Key</option><option value="weapon" ${obj.type==='weapon'?'selected':''}>Weapon</option><option value="armour" ${obj.type==='armour'?'selected':''}>Armour</option><option value="clothing" ${obj.type==='clothing'?'selected':''}>Clothing</option><option value="container" ${obj.type==='container'?'selected':''}>Container / Bag</option></select></div><div style="flex:1"><label>Type</label>${typeSelect}</div>${matSelect}</div>
+            <div style="display:flex; gap:10px;">
+                <div style="flex:1"><label>Lvl Adj</label><input type="number" value="${obj.levelAdj}" oninput="updateObj('levelAdj', this.value)"></div>
+                <div style="flex:1"><label>Weight Adj</label><input type="number" value="${obj.weightAdj}" oninput="updateObj('weightAdj', parseInt(this.value)||0)"></div>
+                <div style="flex:1"><label>Value Adj</label><input type="number" value="${obj.valueAdj}" oninput="updateObj('valueAdj', parseInt(this.value)||0)"></div>
+            </div>
+            <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" style="width:auto; margin:0;" ${obj.questItem?'checked':''} onchange="updateObj('questItem', this.checked)"> Quest Item (cannot be sold to shops)</label>
+            <label>Long Desc</label><textarea rows="4" oninput="updateObj('long', this.value)">${obj.long}</textarea>
+            ${weaponUI}${armourUI}${containerUI}`;
     }
     
-    function createObjectDef(idName, short, type, subtype) { objectLibrary.push({ id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype, material: "plate", levelAdj: 0, keyId: "" }); }
-    function updateObj(k,v) { objectLibrary[currentEditId][k] = v; if(k==='type') { if(v==='weapon') objectLibrary[currentEditId].subtype="blade"; if(v==='armour') { objectLibrary[currentEditId].subtype="helmet"; objectLibrary[currentEditId].material="plate"; } else objectLibrary[currentEditId].subtype=""; } }
+    function createObjectDef(idName, short, type, subtype) {
+        const obj = { id: Date.now()+Math.random(), idName, short, long: `It is ${short}.`, type, subtype, material: "plate", keyId: "" };
+        migrateObject(obj);
+        objectLibrary.push(obj);
+    }
+    function updateObj(k,v) {
+        objectLibrary[currentEditId][k] = v;
+        if(k==='type') {
+            if(v==='weapon') objectLibrary[currentEditId].subtype="blade";
+            else if(v==='armour') { objectLibrary[currentEditId].subtype="helmet"; objectLibrary[currentEditId].material="plate"; }
+            else if(v==='clothing') objectLibrary[currentEditId].subtype="belt";
+            else objectLibrary[currentEditId].subtype="";
+        }
+    }
     function addObjToRoom() { const v=document.getElementById('room-obj-select').value; if(v){activeRoom.objects.push({id:v, msg:""}); refreshLists(); draw();} }
 
     /* --- MAP DRAWING --- */
     function draw() {
         if (!activeRoom || !canvas.width) return;
-        ctx.save(); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.translate(canvas.width/2 + camera.x, canvas.height/2 + camera.y);
+        ctx.save(); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.translate(canvas.width/2 + camera.x, canvas.height/2 + camera.y); ctx.scale(zoom, zoom);
         links.forEach(l => {
             const r1 = rooms.find(r => r.id === l.from), r2 = rooms.find(r => r.id === l.to);
             if(!r1 || !r2 || r1.z !== currentZ || r2.z !== currentZ) return;
@@ -1053,7 +1172,8 @@ let mechanicsUI = `
         rooms.forEach(r => {
             if(r.z !== currentZ) return;
             ctx.fillStyle = (r === activeRoom) ? '#e67e22' : '#2c3e50'; ctx.fillRect(r.x, r.y, 35, 35);
-            ctx.strokeStyle = (r === activeRoom) ? '#fff' : '#555'; ctx.strokeRect(r.x, r.y, 35, 35);
+            ctx.strokeStyle = (r === activeRoom) ? '#fff' : '#555'; ctx.lineWidth = 1; ctx.strokeRect(r.x, r.y, 35, 35);
+            if(r === draggingRoom && dragMoved) { ctx.save(); ctx.strokeStyle = '#e67e22'; ctx.setLineDash([4,3]); ctx.lineWidth = 2; ctx.strokeRect(r.x-2, r.y-2, 39, 39); ctx.restore(); }
             let hasUp=false, hasDown=false; links.forEach(l => { let otherId = (l.from===r.id)?l.to:(l.to===r.id?l.from:null); if(otherId) { let o = rooms.find(x=>x.id===otherId); if(o && o.z>r.z) hasUp=true; if(o && o.z<r.z) hasDown=true; } });
             if(hasUp) { ctx.fillStyle="#fff"; ctx.beginPath(); ctx.moveTo(r.x+25,r.y+5); ctx.lineTo(r.x+30,r.y+12); ctx.lineTo(r.x+20,r.y+12); ctx.fill(); }
             if(hasDown){ ctx.fillStyle="#fff"; ctx.beginPath(); ctx.moveTo(r.x+25,r.y+30); ctx.lineTo(r.x+30,r.y+23); ctx.lineTo(r.x+20,r.y+23); ctx.fill(); }
@@ -1063,9 +1183,90 @@ let mechanicsUI = `
         });
         ctx.restore();
     }
-    
-    function onDown(e) { const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left - (canvas.width/2 + camera.x), my = e.clientY - r.top - (canvas.height/2 + camera.y); const clicked = rooms.find(rm => mx>rm.x && mx<rm.x+35 && my>rm.y && my<rm.y+35 && rm.z==currentZ); if(clicked) { activeRoom = clicked; syncUI(); } else { isPanning = true; lastMouse = {x:e.clientX, y:e.clientY}; } }
-    function onMove(e) { if(isPanning) { camera.x += e.clientX - lastMouse.x; camera.y += e.clientY - lastMouse.y; lastMouse = {x:e.clientX, y:e.clientY}; draw(); } }
+
+    /* --- ZOOM --- */
+    function setZoom(z) {
+        zoom = Math.min(3, Math.max(0.3, z));
+        const lbl = document.getElementById('zoom-label');
+        if(lbl) lbl.innerText = Math.round(zoom * 100) + "%";
+        draw();
+    }
+    function zoomIn() { setZoom(zoom * 1.25); }
+    function zoomOut() { setZoom(zoom / 1.25); }
+    function zoomReset() { setZoom(1); }
+    function onWheel(e) {
+        e.preventDefault();
+        setZoom(zoom * (e.deltaY < 0 ? 1.1 : 0.9));
+    }
+
+    /* --- HOVER TOOLTIP --- */
+    function showTooltip(room, x, y) {
+        const el = document.getElementById('room-tooltip');
+        if(!el) return;
+        el.style.left = (x + 16) + 'px';
+        el.style.top = (y + 16) + 'px';
+        el.innerHTML = `<strong>${room.name}</strong>`;
+        el.style.display = 'block';
+    }
+    function hideTooltip() {
+        const el = document.getElementById('room-tooltip');
+        if(el) el.style.display = 'none';
+    }
+
+    /* --- MOUSE / DRAG HANDLING --- */
+    function worldPos(e) {
+        const r = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - r.left - (canvas.width/2 + camera.x)) / zoom,
+            y: (e.clientY - r.top - (canvas.height/2 + camera.y)) / zoom
+        };
+    }
+
+    function onDown(e) {
+        const p = worldPos(e);
+        const clicked = rooms.find(rm => p.x>rm.x && p.x<rm.x+35 && p.y>rm.y && p.y<rm.y+35 && rm.z==currentZ);
+        if(clicked) {
+            draggingRoom = clicked;
+            dragStartMouse = {x:e.clientX, y:e.clientY};
+            dragOrigin = {x:clicked.x, y:clicked.y};
+            dragMoved = false;
+        } else {
+            isPanning = true; lastMouse = {x:e.clientX, y:e.clientY};
+        }
+    }
+
+    function onMove(e) {
+        if(isPanning) { camera.x += e.clientX - lastMouse.x; camera.y += e.clientY - lastMouse.y; lastMouse = {x:e.clientX, y:e.clientY}; hideTooltip(); draw(); return; }
+        if(draggingRoom) {
+            const dx = (e.clientX - dragStartMouse.x) / zoom;
+            const dy = (e.clientY - dragStartMouse.y) / zoom;
+            if(Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+            if(dragMoved) { draggingRoom.x = dragOrigin.x + dx; draggingRoom.y = dragOrigin.y + dy; hideTooltip(); draw(); }
+            return;
+        }
+        const p = worldPos(e);
+        const hovered = rooms.find(rm => p.x>rm.x && p.x<rm.x+35 && p.y>rm.y && p.y<rm.y+35 && rm.z==currentZ);
+        if(hovered) showTooltip(hovered, e.clientX, e.clientY); else hideTooltip();
+    }
+
+    function onUp(e) {
+        isPanning = false;
+        if(!draggingRoom) return;
+        if(dragMoved) {
+            const G = 60;
+            const snappedX = Math.round(draggingRoom.x / G) * G;
+            const snappedY = Math.round(draggingRoom.y / G) * G;
+            const collision = rooms.find(rm => rm !== draggingRoom && rm.z === draggingRoom.z && rm.x === snappedX && rm.y === snappedY);
+            if(collision) { draggingRoom.x = dragOrigin.x; draggingRoom.y = dragOrigin.y; }
+            else { draggingRoom.x = snappedX; draggingRoom.y = snappedY; }
+            draw();
+        } else {
+            activeRoom = draggingRoom;
+            syncUI();
+        }
+        draggingRoom = null;
+    }
+
     function resize() { canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight; draw(); }
 
     /* --- EXPORT GENERATION --- */
@@ -1151,6 +1352,7 @@ let mechanicsUI = `
     async function exportLPC() {
         rooms.forEach(migrateRoom);
         links.forEach(migrateLink);
+        objectLibrary.forEach(migrateObject);
         const zip = new JSZip();
         const area = exportSettings.areaName || "area";
         const path = exportSettings.basePath.replace(/\/$/, '') + '/';
@@ -1167,17 +1369,61 @@ let mechanicsUI = `
             const fname = makeSafe(parts[0]) + ".c";
             objMap[o.id] = fname;
             allIds.push(`"${o.type}"`);
-            let xtra = "";
-            if(o.type==='key') xtra=`    set_key_id("${o.keyId || primeId}");`;
-            if(o.type==='weapon') xtra=`    set_type("${o.subtype}");`;
-            if(o.type==='armour') { 
-                xtra = `    set_type("${o.subtype}");`;
-                if(o.subtype !== 'cloak') {
-                    xtra += `\n    set_subtype("${o.material}");`;
-                }
-            }
 
-            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${o.type==='weapon'?'WEAPON':(o.type==='armour'?'ARMOUR':(o.type==='key'?'KEY':'OBJECT'))};\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", o.short)}\n${formatLPC("set_long", o.long)}\n    set_level(${getLevelStr(o.levelAdj)});\n${xtra}\n}`);
+            let universal = [];
+            if(o.weightAdj) universal.push(`    set_weight(query_weight() + ${o.weightAdj});`);
+            if(o.valueAdj) universal.push(`    set_value(query_value() + ${o.valueAdj});`);
+            if(o.questItem) universal.push(`    set_destroy();`);
+
+            let xtra = "";
+            let inheritType = "OBJECT";
+            if(o.type==='key') {
+                inheritType = "KEY";
+                xtra = `    set_key_id("${o.keyId || primeId}");`;
+            } else if(o.type==='weapon') {
+                inheritType = "WEAPON";
+                let wLines = [`    set_type("${o.subtype}");`];
+                if(o.ac) wLines.push(`    set_ac(${o.ac});`);
+                if(o.skillLevel) wLines.push(`    set_skill_level(${o.skillLevel});`);
+                if(o.decayRate) wLines.push(`    set_decay_rate(${o.decayRate});`);
+                if(o.poisoned) wLines.push(`    add_poisoning(${o.poisonAmount||10});`);
+                if(o.wieldMsg) wLines.push(`    set_wield("${o.wieldMsg}");`);
+                if(o.unwieldMsg) wLines.push(`    set_unwield("${o.unwieldMsg}");`);
+                xtra = wLines.join('\n');
+            } else if(o.type==='armour') {
+                inheritType = "ARMOUR";
+                let aLines = [`    set_type("${o.subtype}");`];
+                if(o.subtype !== 'cloak') aLines.push(`    set_subtype("${o.material}");`);
+                if(o.raceOverride) aLines.push(`    set_race("${o.raceOverride.toLowerCase()}");`);
+                if(o.acAdj) aLines.push(`    set_ac(query_ac() + ${o.acAdj});`);
+                if(o.wearMsg) aLines.push(`    set_wear("${o.wearMsg}");`);
+                if(o.removeMsg) aLines.push(`    set_remove("${o.removeMsg}");`);
+                xtra = aLines.join('\n');
+            } else if(o.type==='clothing') {
+                inheritType = "CLOTHING";
+                xtra = `    set_type("${o.subtype}");`;
+            } else if(o.type==='container') {
+                inheritType = o.lockable ? "BAG" : "CONTAINER";
+                let cLines = [];
+                cLines.push(`    set_max_capacity(${o.maxCapacity||200});`);
+                cLines.push(`    set_closeable(${o.closeable?1:0});`);
+                cLines.push(`    toggle_closed(${o.startsClosed?0:1});`);
+                if(o.lockable) {
+                    let keyObj = o.contKeyObjId ? objectLibrary.find(k=>k.id==o.contKeyObjId) : null;
+                    if(keyObj) {
+                        let keyPrime = keyObj.idName.split(',')[0].trim().toLowerCase();
+                        cLines.push(`    set_key("${keyPrime}");`);
+                    }
+                    cLines.push(`    toggle_lock(${o.startsLocked?1:0});`);
+                }
+                if(o.closedLong) cLines.push(`    set_closed_long("${o.closedLong}");`);
+                if(o.openString) cLines.push(`    set_open_string("${o.openString}");`);
+                if(o.contMsg) cLines.push(`    set_cont_msg("${o.contMsg}");`);
+                xtra = cLines.join('\n');
+            }
+            xtra = [xtra, ...universal].filter(Boolean).join('\n');
+
+            f.folder("obj").file(fname, `#include "../include/include.h"\ninherit ${inheritType};\nvoid create() {\n    ::create();\n    set_name("${primeId}");\n    set_id(({${allIds.join(',')}}));\n${formatLPC("set_short", o.short)}\n${formatLPC("set_long", o.long)}\n    set_level(${getLevelStr(o.levelAdj)});\n${xtra}\n}`);
         });
 
         const monMap = {};
@@ -1349,7 +1595,7 @@ Unique Object Defs: ${objectLibrary.length}
     }
 
     function downloadJSON() { saveAs(new Blob([JSON.stringify({ rooms, links, objectLibrary, monsterLibrary, exportSettings })],{type:'application/json'}), 'mud.json'); }
-    function importData() { let i = document.createElement('input'); i.type='file'; i.onchange=e=>{ let r=new FileReader(); r.onload=ev=>{ let d=JSON.parse(ev.target.result); rooms=d.rooms; links=d.links; objectLibrary=d.objectLibrary||[]; monsterLibrary=d.monsterLibrary||[]; exportSettings=d.exportSettings||exportSettings; rooms.forEach(migrateRoom); links.forEach(migrateLink); activeRoom=rooms[0]; currentZ=activeRoom.z; document.getElementById('area-name').value = exportSettings.areaName; document.getElementById('base-path').value = exportSettings.basePath; document.getElementById('base-level').value = exportSettings.baseLevel; syncUI(); }; r.readAsText(e.target.files[0]); }; i.click(); }
+    function importData() { let i = document.createElement('input'); i.type='file'; i.onchange=e=>{ let r=new FileReader(); r.onload=ev=>{ let d=JSON.parse(ev.target.result); rooms=d.rooms; links=d.links; objectLibrary=d.objectLibrary||[]; monsterLibrary=d.monsterLibrary||[]; exportSettings=d.exportSettings||exportSettings; objectLibrary.forEach(migrateObject); rooms.forEach(migrateRoom); links.forEach(migrateLink); activeRoom=rooms[0]; currentZ=activeRoom.z; document.getElementById('area-name').value = exportSettings.areaName; document.getElementById('base-path').value = exportSettings.basePath; document.getElementById('base-level').value = exportSettings.baseLevel; syncUI(); }; r.readAsText(e.target.files[0]); }; i.click(); }
 
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 </script>
